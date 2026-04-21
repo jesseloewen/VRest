@@ -27,6 +27,7 @@ htmlcov/
 .env
 .env.*
 !.env copy.example
+ENVIRONMENT
 
 # Generated app data cache
 data/

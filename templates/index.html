@@ -612,7 +612,11 @@
             observer: null,
             isMobile: window.matchMedia("(max-width: 900px)").matches,
             expandedFolders: new Set([""]),
+            thumbnailRetryTimers: new Map(),
         };
+
+        const THUMBNAIL_MAX_RETRIES = 8;
+        const THUMBNAIL_RETRY_BASE_MS = 450;
 
         function isTouchLike() {
             return window.matchMedia("(hover: none), (pointer: coarse)").matches;
@@ -1036,6 +1040,40 @@
             }
         }
 
+        function clearThumbnailRetry(card) {
+            const timerId = state.thumbnailRetryTimers.get(card);
+            if (timerId) {
+                window.clearTimeout(timerId);
+                state.thumbnailRetryTimers.delete(card);
+            }
+        }
+
+        function scheduleThumbnailRetry(card, img, thumbSrc, attempt) {
+            clearThumbnailRetry(card);
+
+            if (!card.isConnected) {
+                return;
+            }
+
+            if (attempt >= THUMBNAIL_MAX_RETRIES) {
+                img.src = FALLBACK_THUMB;
+                card.classList.remove("skeleton");
+                return;
+            }
+
+            const delayMs = THUMBNAIL_RETRY_BASE_MS + attempt * 300;
+            const timerId = window.setTimeout(() => {
+                if (!card.isConnected) {
+                    clearThumbnailRetry(card);
+                    return;
+                }
+                const cacheBuster = `cb=${Date.now()}-${attempt + 1}`;
+                img.src = `${thumbSrc}?${cacheBuster}`;
+            }, delayMs);
+
+            state.thumbnailRetryTimers.set(card, timerId);
+        }
+
         function clearAllPreviews(exceptCard) {
             state.cards.forEach((candidate) => {
                 if (candidate === exceptCard) {
@@ -1111,10 +1149,17 @@
 
             const img = card.querySelector("img.card-thumb");
             const previewTapBtn = card.querySelector("button.preview-tap-btn");
-            img.addEventListener("load", () => card.classList.remove("skeleton"));
-            img.addEventListener("error", () => {
-                img.src = FALLBACK_THUMB;
+            img.dataset.thumbSrc = thumbSrc;
+            img.dataset.thumbAttempt = "0";
+            img.addEventListener("load", () => {
+                clearThumbnailRetry(card);
                 card.classList.remove("skeleton");
+            });
+            img.addEventListener("error", () => {
+                const baseThumbSrc = img.dataset.thumbSrc || thumbSrc;
+                const attempt = Number.parseInt(img.dataset.thumbAttempt || "0", 10) || 0;
+                img.dataset.thumbAttempt = String(attempt + 1);
+                scheduleThumbnailRetry(card, img, baseThumbSrc, attempt);
             });
 
             if (!isTouchLike()) {
@@ -1153,6 +1198,7 @@
         }
 
         function renderGrid() {
+            state.cards.forEach((card) => clearThumbnailRetry(card));
             videoGridEl.innerHTML = "";
             state.cards = [];
 
