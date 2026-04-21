@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VRest Login</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;700&display=swap"
+        rel="stylesheet"
+    />
+    <style>
+        :root {
+            --bg0: #061316;
+            --bg1: #112227;
+            --accent: #5ad8b8;
+            --text: #e6f4ef;
+            --muted: #9ac3b8;
+            --danger: #e26c6c;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            font-family: "Space Grotesk", sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(circle at 20% 10%, rgba(90, 216, 184, 0.2), transparent 38%),
+                linear-gradient(135deg, var(--bg0), var(--bg1));
+            padding: 18px;
+        }
+
+        .card {
+            width: min(420px, 100%);
+            background: rgba(5, 13, 16, 0.78);
+            border: 1px solid rgba(141, 208, 197, 0.26);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 24px 52px rgba(0, 0, 0, 0.35);
+        }
+
+        .brand {
+            margin: 0 0 10px;
+            font-family: "Bebas Neue", sans-serif;
+            letter-spacing: 1px;
+            font-size: 2rem;
+            color: var(--accent);
+        }
+
+        .hint {
+            margin: 0 0 16px;
+            color: var(--muted);
+            font-size: 0.95rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.9rem;
+        }
+
+        input[type="password"] {
+            width: 100%;
+            border: 1px solid rgba(141, 208, 197, 0.36);
+            background: rgba(8, 19, 24, 0.9);
+            color: var(--text);
+            border-radius: 10px;
+            padding: 10px 12px;
+            font: inherit;
+            margin-bottom: 12px;
+        }
+
+        button {
+            border: 0;
+            border-radius: 10px;
+            background: linear-gradient(90deg, var(--accent), #78f0d2);
+            color: #0a1618;
+            padding: 10px 14px;
+            font: inherit;
+            font-weight: 700;
+            width: 100%;
+            cursor: pointer;
+        }
+
+        .error {
+            margin: 0 0 12px;
+            color: #ffd7d7;
+            border: 1px solid rgba(226, 108, 108, 0.5);
+            background: rgba(74, 25, 25, 0.5);
+            border-radius: 10px;
+            padding: 8px 10px;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <form class="card" method="post">
+        <h1 class="brand">VRest</h1>
+        <p class="hint">Enter password to continue.</p>
+        {% if error %}
+        <p class="error">{{ error }}</p>
+        {% endif %}
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required autofocus />
+        <button type="submit">Sign In</button>
+    </form>
+</body>
+</html>

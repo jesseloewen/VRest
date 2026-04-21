@@ -1,0 +1,1209 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VRest Video Browser</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+        rel="stylesheet"
+    />
+    <link
+        rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.css"
+    />
+    <style>
+        :root {
+            --bg0: #061316;
+            --bg1: #112227;
+            --bg2: #1a3138;
+            --panel: rgba(10, 20, 24, 0.78);
+            --panel-border: rgba(141, 208, 197, 0.18);
+            --text: #e6f4ef;
+            --muted: #8fb8ad;
+            --accent: #5ad8b8;
+            --accent-strong: #2dbf98;
+            --warn: #f2b965;
+            --danger: #e46969;
+            --shadow: 0 16px 38px rgba(2, 7, 8, 0.4);
+            --radius: 16px;
+            --grid-min: 220px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Space Grotesk", sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(circle at 15% 10%, rgba(90, 216, 184, 0.22), transparent 40%),
+                radial-gradient(circle at 85% 15%, rgba(242, 185, 101, 0.16), transparent 35%),
+                linear-gradient(145deg, var(--bg0), var(--bg1) 48%, var(--bg2));
+        }
+
+        .app-shell {
+            display: grid;
+            grid-template-columns: 290px minmax(0, 1fr);
+            grid-template-rows: 74px minmax(0, 1fr);
+            height: 100vh;
+            transition: grid-template-columns 180ms ease;
+        }
+
+        .app-shell.sidebar-collapsed {
+            grid-template-columns: 0 minmax(0, 1fr);
+        }
+
+        .topbar {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 18px;
+            background: rgba(5, 11, 13, 0.75);
+            backdrop-filter: blur(7px);
+            border-bottom: 1px solid rgba(141, 208, 197, 0.17);
+            position: relative;
+            z-index: 5;
+        }
+
+        .brand {
+            font-family: "Bebas Neue", sans-serif;
+            letter-spacing: 1.2px;
+            font-size: 2rem;
+            color: var(--accent);
+            text-shadow: 0 0 22px rgba(90, 216, 184, 0.45);
+        }
+
+        .topbar-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .toggle-btn {
+            border: 1px solid rgba(141, 208, 197, 0.3);
+            background: rgba(25, 51, 58, 0.6);
+            color: var(--text);
+            border-radius: 10px;
+            width: 40px;
+            height: 40px;
+            cursor: pointer;
+            font-size: 20px;
+            line-height: 1;
+            transition: all 180ms ease;
+        }
+
+        .toggle-btn:hover {
+            border-color: rgba(90, 216, 184, 0.75);
+            transform: translateY(-1px);
+        }
+
+        .topbar-status {
+            color: var(--muted);
+            font-size: 0.92rem;
+            text-align: right;
+        }
+
+        .sidebar {
+            padding: 14px;
+            border-right: 1px solid var(--panel-border);
+            overflow-y: auto;
+            background: rgba(3, 8, 10, 0.65);
+            backdrop-filter: blur(5px);
+        }
+
+        .sidebar-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(1, 4, 6, 0.52);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 180ms ease;
+            z-index: 6;
+        }
+
+        .sidebar h2 {
+            margin: 0 0 10px;
+            font-size: 1.02rem;
+            font-weight: 600;
+            color: #c7efe3;
+        }
+
+        .tree-list {
+            list-style: none;
+            margin: 0;
+            padding-left: 0;
+        }
+
+        .tree-item {
+            margin-bottom: 4px;
+        }
+
+        .tree-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .tree-toggle,
+        .tree-spacer {
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            flex: 0 0 22px;
+        }
+
+        .tree-toggle {
+            border: 0;
+            background: rgba(90, 216, 184, 0.12);
+            color: #d6f7ee;
+            cursor: pointer;
+            line-height: 1;
+            padding: 0;
+            font-size: 12px;
+        }
+
+        .tree-toggle:hover {
+            background: rgba(90, 216, 184, 0.24);
+        }
+
+        .tree-button {
+            width: 100%;
+            text-align: left;
+            border: 0;
+            padding: 6px 9px;
+            border-radius: 8px;
+            color: #d0e8df;
+            background: transparent;
+            cursor: pointer;
+            font: inherit;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tree-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .tree-button:hover,
+        .tree-button.active {
+            background: rgba(90, 216, 184, 0.18);
+            color: #f3fffb;
+        }
+
+        .tree-children {
+            list-style: none;
+            margin: 0;
+            padding-left: 13px;
+            border-left: 1px dashed rgba(141, 208, 197, 0.23);
+        }
+
+        .main {
+            padding: 14px 16px 24px;
+            overflow-y: auto;
+        }
+
+        .alert {
+            border: 1px solid rgba(228, 105, 105, 0.4);
+            color: #ffe1e1;
+            background: rgba(89, 29, 29, 0.56);
+            border-radius: 12px;
+            padding: 10px 12px;
+            margin-bottom: 12px;
+        }
+
+        .crumbs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 16px;
+            align-items: center;
+        }
+
+        .crumb {
+            border: 0;
+            border-radius: 8px;
+            background: rgba(141, 208, 197, 0.16);
+            color: #d9f7ef;
+            padding: 6px 10px;
+            cursor: pointer;
+            font: inherit;
+            font-size: 0.87rem;
+        }
+
+        .crumb:hover {
+            background: rgba(141, 208, 197, 0.25);
+        }
+
+        .video-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(var(--grid-min), 1fr));
+            gap: 16px;
+            opacity: 0;
+            animation: appear 420ms ease forwards;
+        }
+
+        @keyframes appear {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .video-card {
+            background: var(--panel);
+            border: 1px solid var(--panel-border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            cursor: pointer;
+            transform: translateZ(0);
+            transition: transform 180ms ease, border-color 180ms ease;
+            position: relative;
+            min-height: 200px;
+        }
+
+        .video-card:hover {
+            transform: scale(1.08);
+            z-index: 3;
+            border-color: rgba(90, 216, 184, 0.45);
+        }
+
+        .card-media {
+            position: relative;
+            aspect-ratio: 16 / 9;
+            background: rgba(8, 15, 18, 0.92);
+            overflow: hidden;
+        }
+
+        .preview-tap-btn {
+            position: absolute;
+            right: 10px;
+            bottom: 10px;
+            z-index: 3;
+            border: 1px solid rgba(141, 208, 197, 0.55);
+            color: #e9fff9;
+            background: rgba(4, 12, 15, 0.72);
+            border-radius: 999px;
+            padding: 6px 10px;
+            font: inherit;
+            font-size: 0.74rem;
+            cursor: pointer;
+            display: none;
+            backdrop-filter: blur(3px);
+        }
+
+        .preview-tap-btn.active {
+            background: rgba(90, 216, 184, 0.3);
+            border-color: rgba(90, 216, 184, 0.9);
+        }
+
+        .card-thumb,
+        .card-preview {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: cover;
+        }
+
+        .card-preview {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 140ms ease;
+        }
+
+        .video-card.previewing .card-preview {
+            opacity: 1;
+        }
+
+        .video-card.previewing .card-thumb {
+            opacity: 0;
+        }
+
+        .preview-loader,
+        .preview-error {
+            position: absolute;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            text-align: center;
+            padding: 8px;
+            color: #f3fff8;
+            background: rgba(4, 8, 10, 0.72);
+        }
+
+        .video-card.preview-loading .preview-loader {
+            display: flex;
+        }
+
+        .video-card.preview-error .preview-error {
+            display: flex;
+            color: #ffd8d8;
+            background: rgba(55, 20, 20, 0.82);
+        }
+
+        .card-body {
+            padding: 10px 12px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+        }
+
+        .card-title {
+            font-size: 0.97rem;
+            line-height: 1.2;
+            min-height: 2.25em;
+            margin: 0;
+            word-break: break-word;
+        }
+
+        .folder-pill {
+            display: inline-block;
+            align-self: flex-start;
+            font-size: 0.74rem;
+            color: #0a1618;
+            background: linear-gradient(90deg, var(--accent), #79f0d2);
+            border-radius: 999px;
+            padding: 4px 8px;
+            max-width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .video-card.skeleton .card-media {
+            background: linear-gradient(
+                102deg,
+                rgba(32, 60, 67, 0.85) 20%,
+                rgba(57, 101, 112, 0.95) 38%,
+                rgba(34, 63, 71, 0.85) 54%
+            );
+            background-size: 220% 100%;
+            animation: shimmer 1.35s infinite linear;
+        }
+
+        @keyframes shimmer {
+            from {
+                background-position: 160% 0;
+            }
+            to {
+                background-position: -70% 0;
+            }
+        }
+
+        dialog.video-dialog {
+            width: min(92vw, 1080px);
+            border: 1px solid rgba(141, 208, 197, 0.42);
+            border-radius: 14px;
+            background: rgba(5, 10, 12, 0.98);
+            color: var(--text);
+            padding: 12px;
+            box-shadow: 0 28px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        dialog.video-dialog::backdrop {
+            backdrop-filter: blur(5px);
+            background: rgba(3, 6, 8, 0.62);
+        }
+
+        .dialog-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            gap: 12px;
+        }
+
+        .dialog-head h3 {
+            margin: 0;
+            font-size: 1.05rem;
+        }
+
+        .dialog-tools {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .dialog-close {
+            border: 0;
+            background: rgba(228, 105, 105, 0.9);
+            color: #fff;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 20px;
+            line-height: 1;
+        }
+
+        .player {
+            width: 100%;
+            max-height: 76vh;
+            border-radius: 10px;
+            background: #000;
+        }
+
+        .player-shell {
+            position: relative;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #000;
+        }
+
+        .seek-toast {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(5, 10, 14, 0.8);
+            border: 1px solid rgba(141, 208, 197, 0.45);
+            border-radius: 999px;
+            padding: 8px 12px;
+            font-size: 0.82rem;
+            color: #dffbf3;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 120ms ease;
+            z-index: 4;
+        }
+
+        .seek-toast.visible {
+            opacity: 1;
+        }
+
+        .plyr--full-ui input[type="range"] {
+            color: var(--accent);
+        }
+
+        .empty-state {
+            margin-top: 24px;
+            color: #b5d7cc;
+        }
+
+        @media (max-width: 900px) {
+            .app-shell {
+                grid-template-columns: 1fr;
+                grid-template-rows: 74px minmax(0, 1fr);
+            }
+
+            .sidebar {
+                position: fixed;
+                left: 0;
+                top: 74px;
+                bottom: 0;
+                width: min(78vw, 320px);
+                transform: translateX(-102%);
+                transition: transform 180ms ease;
+                border-right: 1px solid rgba(141, 208, 197, 0.24);
+                border-bottom: none;
+                z-index: 7;
+            }
+
+            .main {
+                grid-row: 2;
+            }
+
+            .app-shell.sidebar-open .sidebar {
+                transform: translateX(0);
+            }
+
+            .app-shell.sidebar-open + .sidebar-backdrop {
+                opacity: 1;
+                pointer-events: auto;
+            }
+
+            .preview-tap-btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-shell" id="appShell">
+        <header class="topbar">
+            <div class="topbar-left">
+                <button id="toggleSidebar" class="toggle-btn" aria-label="Toggle folders">☰</button>
+                <div class="brand">VRest</div>
+            </div>
+            <div class="topbar-status" id="statusText">Scanning videos...</div>
+        </header>
+
+        <aside class="sidebar" id="sidebar">
+            <h2>Folders</h2>
+            <ul class="tree-list" id="folderTree"></ul>
+        </aside>
+
+        <main class="main">
+            {% if config_error %}
+            <div class="alert">{{ config_error }}</div>
+            {% endif %}
+            <div class="crumbs" id="breadcrumbs"></div>
+            <section class="video-grid" id="videoGrid"></section>
+            <div class="empty-state" id="emptyState" hidden>No videos match this folder.</div>
+        </main>
+    </div>
+    <div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div>
+
+    <dialog class="video-dialog" id="videoDialog">
+        <div class="dialog-head">
+            <h3 id="dialogTitle">Now Playing</h3>
+            <div class="dialog-tools">
+                <button class="dialog-close" id="dialogClose" aria-label="Close">×</button>
+            </div>
+        </div>
+        <div class="player-shell" id="playerShell">
+            <video id="dialogPlayer" class="player" controls playsinline preload="metadata"></video>
+            <div class="seek-toast" id="seekToast"></div>
+        </div>
+    </dialog>
+
+    <script src="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.polyfilled.min.js"></script>
+
+    <script>
+        const appShell = document.getElementById("appShell");
+        const toggleSidebarBtn = document.getElementById("toggleSidebar");
+        const sidebarBackdrop = document.getElementById("sidebarBackdrop");
+        const statusText = document.getElementById("statusText");
+        const folderTreeEl = document.getElementById("folderTree");
+        const videoGridEl = document.getElementById("videoGrid");
+        const emptyStateEl = document.getElementById("emptyState");
+        const breadcrumbsEl = document.getElementById("breadcrumbs");
+        const dialogEl = document.getElementById("videoDialog");
+        const dialogTitleEl = document.getElementById("dialogTitle");
+        const dialogPlayerEl = document.getElementById("dialogPlayer");
+        const playerShellEl = document.getElementById("playerShell");
+        const seekToastEl = document.getElementById("seekToast");
+        const dialogCloseBtn = document.getElementById("dialogClose");
+        let plyrPlayer = null;
+        let seekToastTimer = null;
+        const gestureState = { lastTapAt: 0, lastSide: "", activeTouch: false };
+
+        const FALLBACK_THUMB =
+            "data:image/svg+xml;utf8," +
+            encodeURIComponent(
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360"><defs><linearGradient id="g" x1="0" x2="1"><stop stop-color="#193237"/><stop offset="1" stop-color="#2c5863"/></linearGradient></defs><rect width="640" height="360" fill="url(#g)"/><circle cx="110" cy="92" r="45" fill="#5ad8b8" opacity=".35"/><rect x="182" y="150" width="287" height="58" rx="9" fill="#112227"/><polygon points="295,172 295,247 356,209" fill="#5ad8b8"/><text x="34" y="322" fill="#9de7d4" font-family="Verdana" font-size="28">Preview unavailable</text></svg>'
+            );
+
+        const state = {
+            root: null,
+            videos: [],
+            folderFilter: "",
+            cards: [],
+            observer: null,
+            isMobile: window.matchMedia("(max-width: 900px)").matches,
+            expandedFolders: new Set([""]),
+        };
+
+        function isTouchLike() {
+            return window.matchMedia("(hover: none), (pointer: coarse)").matches;
+        }
+
+        function closeSidebarIfMobile() {
+            if (!state.isMobile) {
+                return;
+            }
+            appShell.classList.remove("sidebar-open");
+        }
+
+        function toggleSidebar() {
+            if (state.isMobile) {
+                appShell.classList.toggle("sidebar-open");
+            } else {
+                appShell.classList.toggle("sidebar-collapsed");
+            }
+        }
+
+        toggleSidebarBtn.addEventListener("click", toggleSidebar);
+        sidebarBackdrop.addEventListener("click", closeSidebarIfMobile);
+
+        window.addEventListener("resize", () => {
+            const wasMobile = state.isMobile;
+            state.isMobile = window.matchMedia("(max-width: 900px)").matches;
+            if (state.isMobile && !wasMobile) {
+                appShell.classList.remove("sidebar-collapsed");
+                appShell.classList.remove("sidebar-open");
+            }
+            if (!state.isMobile && wasMobile) {
+                appShell.classList.remove("sidebar-open");
+            }
+        });
+
+        dialogCloseBtn.addEventListener("click", closeDialog);
+        dialogEl.addEventListener("cancel", (event) => {
+            event.preventDefault();
+        });
+
+        function initProPlayer() {
+            if (typeof window.Plyr !== "function") {
+                return;
+            }
+
+            plyrPlayer = new window.Plyr(dialogPlayerEl, {
+                captions: { active: false, update: true, language: "auto" },
+                speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+                controls: [
+                    "play-large",
+                    "rewind",
+                    "play",
+                    "fast-forward",
+                    "progress",
+                    "current-time",
+                    "duration",
+                    "mute",
+                    "volume",
+                    "captions",
+                    "settings",
+                    "pip",
+                    "airplay",
+                    "fullscreen",
+                ],
+            });
+        }
+
+        function showSeekToast(text) {
+            seekToastEl.textContent = text;
+            seekToastEl.classList.add("visible");
+            if (seekToastTimer) {
+                window.clearTimeout(seekToastTimer);
+            }
+            seekToastTimer = window.setTimeout(() => {
+                seekToastEl.classList.remove("visible");
+            }, 550);
+        }
+
+        function getActivePlayerTimeAndDuration() {
+            if (plyrPlayer) {
+                return {
+                    currentTime: Number(plyrPlayer.currentTime || 0),
+                    duration: Number(plyrPlayer.duration || 0),
+                    setTime: (value) => {
+                        plyrPlayer.currentTime = value;
+                    },
+                };
+            }
+
+            return {
+                currentTime: Number(dialogPlayerEl.currentTime || 0),
+                duration: Number(dialogPlayerEl.duration || 0),
+                setTime: (value) => {
+                    dialogPlayerEl.currentTime = value;
+                },
+            };
+        }
+
+        function seekActivePlayerBy(seconds) {
+            const player = getActivePlayerTimeAndDuration();
+            const duration = Number.isFinite(player.duration) ? player.duration : 0;
+            const target = Math.max(0, Math.min(player.currentTime + seconds, duration || Number.MAX_SAFE_INTEGER));
+            player.setTime(target);
+            showSeekToast(seconds > 0 ? `+${seconds}s` : `${seconds}s`);
+        }
+
+        function gestureSideFromClientX(clientX) {
+            const rect = playerShellEl.getBoundingClientRect();
+            if (!rect.width) {
+                return "";
+            }
+            const localX = clientX - rect.left;
+            if (localX < rect.width * 0.35) {
+                return "left";
+            }
+            if (localX > rect.width * 0.65) {
+                return "right";
+            }
+            return "";
+        }
+
+        playerShellEl.addEventListener("dblclick", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const side = gestureSideFromClientX(event.clientX);
+            if (side === "left") {
+                seekActivePlayerBy(-10);
+            }
+            if (side === "right") {
+                seekActivePlayerBy(10);
+            }
+        }, true);
+
+        playerShellEl.addEventListener(
+            "touchend",
+            (event) => {
+                if (!event.changedTouches || !event.changedTouches.length) {
+                    return;
+                }
+                const touch = event.changedTouches[0];
+                const side = gestureSideFromClientX(touch.clientX);
+                if (!side) {
+                    gestureState.lastTapAt = 0;
+                    gestureState.lastSide = "";
+                    return;
+                }
+
+                const now = Date.now();
+                const isDoubleTap =
+                    gestureState.lastSide === side &&
+                    now - gestureState.lastTapAt <= 320;
+
+                if (isDoubleTap) {
+                    event.preventDefault();
+                    seekActivePlayerBy(side === "left" ? -10 : 10);
+                    gestureState.lastTapAt = 0;
+                    gestureState.lastSide = "";
+                    return;
+                }
+
+                gestureState.lastTapAt = now;
+                gestureState.lastSide = side;
+            },
+            { passive: false }
+        );
+
+        async function openVideoDialog(meta) {
+            const videoSrc = `/api/video/${encodePath(meta.path)}`;
+            let tracks = [];
+
+            try {
+                const response = await fetch(`/api/subtitles/${encodePath(meta.path)}`, {
+                    cache: "no-store",
+                });
+                if (response.ok) {
+                    const payload = await response.json();
+                    tracks = Array.isArray(payload.tracks) ? payload.tracks : [];
+                }
+            } catch (_) {
+                tracks = [];
+            }
+
+            dialogTitleEl.textContent = fileTitle(meta.name);
+
+            // Keep one track per language label to avoid duplicate stacked subtitles.
+            const dedupedTracks = [];
+            const seenLanguage = new Set();
+            tracks.forEach((track) => {
+                const key = `${(track.srclang || "").toLowerCase()}|${(track.label || "").toLowerCase()}`;
+                if (seenLanguage.has(key)) {
+                    return;
+                }
+                seenLanguage.add(key);
+                dedupedTracks.push(track);
+            });
+            tracks = dedupedTracks;
+
+            if (plyrPlayer) {
+                plyrPlayer.source = {
+                    type: "video",
+                    sources: [{ src: videoSrc }],
+                    tracks: tracks.map((track) => ({
+                        kind: "captions",
+                        label: track.label,
+                        srclang: track.srclang,
+                        src: track.src,
+                        default: false,
+                    })),
+                };
+            } else {
+                dialogPlayerEl.pause();
+                dialogPlayerEl.removeAttribute("src");
+                Array.from(dialogPlayerEl.querySelectorAll("track")).forEach((el) => el.remove());
+                dialogPlayerEl.src = videoSrc;
+                tracks.forEach((track) => {
+                    const trackEl = document.createElement("track");
+                    trackEl.kind = "captions";
+                    trackEl.label = track.label;
+                    trackEl.srclang = track.srclang;
+                    trackEl.src = track.src;
+                    dialogPlayerEl.appendChild(trackEl);
+                });
+                dialogPlayerEl.load();
+            }
+
+            dialogEl.showModal();
+        }
+
+        function closeDialog() {
+            if (plyrPlayer) {
+                plyrPlayer.stop();
+                plyrPlayer.source = {
+                    type: "video",
+                    sources: [],
+                    tracks: [],
+                };
+                plyrPlayer.captions.active = false;
+            } else {
+                dialogPlayerEl.pause();
+                dialogPlayerEl.removeAttribute("src");
+                Array.from(dialogPlayerEl.querySelectorAll("track")).forEach((el) => el.remove());
+                dialogPlayerEl.load();
+            }
+            dialogEl.close();
+        }
+
+        function encodePath(path) {
+            return path
+                .split("/")
+                .map((part) => encodeURIComponent(part))
+                .join("/");
+        }
+
+        function folderLabel(path) {
+            if (!path) {
+                return "Root";
+            }
+            const parts = path.split("/");
+            return parts[parts.length - 1] || "Root";
+        }
+
+        function fileTitle(name) {
+            return name.replace(/\.[^/.]+$/, "");
+        }
+
+        function inCurrentFilter(video) {
+            if (!state.folderFilter) {
+                return true;
+            }
+            return (
+                video.folder === state.folderFilter ||
+                video.folder.startsWith(state.folderFilter + "/")
+            );
+        }
+
+        function buildBreadcrumbs() {
+            breadcrumbsEl.innerHTML = "";
+
+            const rootCrumb = document.createElement("button");
+            rootCrumb.className = "crumb";
+            rootCrumb.textContent = "All Videos";
+            rootCrumb.addEventListener("click", () => {
+                state.folderFilter = "";
+                renderFolders();
+                renderGrid();
+            });
+            breadcrumbsEl.appendChild(rootCrumb);
+
+            if (!state.folderFilter) {
+                return;
+            }
+
+            const parts = state.folderFilter.split("/");
+            let cumulative = "";
+            for (const part of parts) {
+                cumulative = cumulative ? cumulative + "/" + part : part;
+                const crumb = document.createElement("button");
+                crumb.className = "crumb";
+                crumb.textContent = part;
+                const target = cumulative;
+                crumb.addEventListener("click", () => {
+                    state.folderFilter = target;
+                    renderFolders();
+                    renderGrid();
+                });
+                breadcrumbsEl.appendChild(crumb);
+            }
+        }
+
+        function renderFolderNode(node) {
+            const li = document.createElement("li");
+            li.className = "tree-item";
+
+            const row = document.createElement("div");
+            row.className = "tree-row";
+
+            const hasChildren = node.folders && node.folders.length > 0;
+            const isExpanded = state.expandedFolders.has(node.path);
+
+            if (hasChildren) {
+                const toggle = document.createElement("button");
+                toggle.type = "button";
+                toggle.className = "tree-toggle";
+                toggle.textContent = isExpanded ? "▾" : "▸";
+                toggle.setAttribute("aria-label", isExpanded ? "Collapse folder" : "Expand folder");
+                toggle.addEventListener("click", (event) => {
+                    event.stopPropagation();
+                    if (state.expandedFolders.has(node.path)) {
+                        state.expandedFolders.delete(node.path);
+                    } else {
+                        state.expandedFolders.add(node.path);
+                    }
+                    renderFolders();
+                });
+                row.appendChild(toggle);
+            } else {
+                const spacer = document.createElement("span");
+                spacer.className = "tree-spacer";
+                row.appendChild(spacer);
+            }
+
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "tree-button" + (state.folderFilter === node.path ? " active" : "");
+            button.innerHTML = `<span class="tree-name">${node.path ? "📁 " + node.name : "🏠 Root"}</span>`;
+            button.addEventListener("click", () => {
+                state.folderFilter = node.path;
+                if (node.path) {
+                    const segments = node.path.split("/");
+                    let chain = "";
+                    for (const segment of segments) {
+                        chain = chain ? `${chain}/${segment}` : segment;
+                        state.expandedFolders.add(chain);
+                    }
+                }
+                renderFolders();
+                renderGrid();
+                closeSidebarIfMobile();
+            });
+            row.appendChild(button);
+            li.appendChild(row);
+
+            if (hasChildren && isExpanded) {
+                const children = document.createElement("ul");
+                children.className = "tree-children";
+                for (const child of node.folders) {
+                    children.appendChild(renderFolderNode(child));
+                }
+                li.appendChild(children);
+            }
+
+            return li;
+        }
+
+        function renderFolders() {
+            folderTreeEl.innerHTML = "";
+            if (!state.root) {
+                return;
+            }
+            folderTreeEl.appendChild(renderFolderNode(state.root));
+            buildBreadcrumbs();
+        }
+
+        function buildObserver() {
+            if (state.observer) {
+                state.observer.disconnect();
+            }
+
+            state.observer = new IntersectionObserver(
+                (entries) => {
+                    for (const entry of entries) {
+                        if (!entry.isIntersecting) {
+                            continue;
+                        }
+                        const card = entry.target;
+                        const img = card.querySelector("img.card-thumb");
+                        if (img && img.dataset.src && !img.src) {
+                            img.src = img.dataset.src;
+                        }
+                        state.observer.unobserve(card);
+                    }
+                },
+                {
+                    root: null,
+                    rootMargin: "180px",
+                    threshold: 0.1,
+                }
+            );
+        }
+
+        function clearPreview(card) {
+            const preview = card.querySelector("video.card-preview");
+            const previewTapBtn = card.querySelector("button.preview-tap-btn");
+            card.classList.remove("previewing", "preview-loading", "preview-error");
+            preview.pause();
+            preview.removeAttribute("src");
+            preview.load();
+            if (previewTapBtn) {
+                previewTapBtn.classList.remove("active");
+                previewTapBtn.textContent = "Preview";
+            }
+        }
+
+        function clearAllPreviews(exceptCard) {
+            state.cards.forEach((candidate) => {
+                if (candidate === exceptCard) {
+                    return;
+                }
+                candidate.dataset.previewActive = "false";
+                candidate.dataset.previewToken = "";
+                clearPreview(candidate);
+            });
+        }
+
+        async function activatePreview(card, meta) {
+            const preview = card.querySelector("video.card-preview");
+            if (card.dataset.previewActive === "true") {
+                return;
+            }
+            const hoverToken =
+                typeof crypto !== "undefined" && crypto.randomUUID
+                    ? crypto.randomUUID()
+                    : `${Date.now()}-${Math.random()}`;
+            card.dataset.previewActive = "true";
+            card.dataset.previewToken = hoverToken;
+
+            card.classList.remove("preview-error");
+            card.classList.add("preview-loading");
+
+            preview.src = `/api/preview/${encodePath(meta.path)}`;
+
+            try {
+                await preview.play();
+                if (
+                    card.dataset.previewActive !== "true" ||
+                    card.dataset.previewToken !== hoverToken
+                ) {
+                    return;
+                }
+                card.classList.add("previewing");
+            } catch (_) {
+                if (
+                    card.dataset.previewActive !== "true" ||
+                    card.dataset.previewToken !== hoverToken
+                ) {
+                    return;
+                }
+                card.classList.add("preview-error");
+            } finally {
+                if (card.dataset.previewToken === hoverToken) {
+                    card.classList.remove("preview-loading");
+                }
+            }
+        }
+
+        function renderCard(meta, idx) {
+            const card = document.createElement("article");
+            card.className = "video-card skeleton";
+            card.style.animation = `appear 360ms ease ${Math.min(idx * 25, 250)}ms both`;
+
+            const thumbSrc = `/api/thumbnail/${encodePath(meta.path)}`;
+
+            card.innerHTML = `
+                <div class="card-media">
+                    <img class="card-thumb" alt="${meta.name}" data-src="${thumbSrc}" loading="lazy" />
+                    <video class="card-preview" muted loop playsinline preload="none"></video>
+                    <button class="preview-tap-btn" type="button">Preview</button>
+                    <div class="preview-loader">Generating preview...</div>
+                    <div class="preview-error">Preview failed</div>
+                </div>
+                <div class="card-body">
+                    <h4 class="card-title">${fileTitle(meta.name)}</h4>
+                    <span class="folder-pill">${folderLabel(meta.folder)}</span>
+                </div>
+            `;
+
+            const img = card.querySelector("img.card-thumb");
+            const previewTapBtn = card.querySelector("button.preview-tap-btn");
+            img.addEventListener("load", () => card.classList.remove("skeleton"));
+            img.addEventListener("error", () => {
+                img.src = FALLBACK_THUMB;
+                card.classList.remove("skeleton");
+            });
+
+            if (!isTouchLike()) {
+                card.addEventListener("mouseenter", () => {
+                    clearAllPreviews(card);
+                    activatePreview(card, meta);
+                });
+                card.addEventListener("mouseleave", () => {
+                    card.dataset.previewActive = "false";
+                    card.dataset.previewToken = "";
+                    clearPreview(card);
+                });
+            }
+
+            previewTapBtn.addEventListener("click", (event) => {
+                event.stopPropagation();
+                const isActive = card.dataset.previewActive === "true";
+                if (isActive) {
+                    card.dataset.previewActive = "false";
+                    card.dataset.previewToken = "";
+                    clearPreview(card);
+                    return;
+                }
+
+                clearAllPreviews(card);
+                activatePreview(card, meta);
+                previewTapBtn.classList.add("active");
+                previewTapBtn.textContent = "Stop";
+            });
+
+            card.addEventListener("click", () => {
+                openVideoDialog(meta);
+            });
+
+            return card;
+        }
+
+        function renderGrid() {
+            videoGridEl.innerHTML = "";
+            state.cards = [];
+
+            const filtered = state.videos.filter(inCurrentFilter);
+            emptyStateEl.hidden = filtered.length > 0;
+
+            if (!filtered.length) {
+                buildBreadcrumbs();
+                return;
+            }
+
+            buildObserver();
+            filtered.forEach((meta, idx) => {
+                const card = renderCard(meta, idx);
+                state.cards.push(card);
+                videoGridEl.appendChild(card);
+                state.observer.observe(card);
+            });
+
+            buildBreadcrumbs();
+        }
+
+        async function loadLibrary() {
+            statusText.textContent = "Loading library...";
+            try {
+                const response = await fetch("/api/browse", { cache: "no-store" });
+                const payload = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(payload.error || "Failed to load library");
+                }
+
+                state.root = payload.root;
+                state.videos = payload.files || [];
+                statusText.textContent = `${payload.count} videos`; 
+
+                if (!payload.ffmpeg || !payload.ffprobe) {
+                    statusText.textContent += " | ffmpeg missing";
+                }
+
+                renderFolders();
+                renderGrid();
+            } catch (error) {
+                statusText.textContent = "Error loading videos";
+                emptyStateEl.hidden = false;
+                emptyStateEl.textContent = error.message;
+            }
+        }
+
+        initProPlayer();
+        loadLibrary();
+    </script>
+</body>
+</html>

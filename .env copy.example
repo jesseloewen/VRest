@@ -1,0 +1,15 @@
+# Absolute path to your video library root
+VIDEO_FOLDER=C:/path/to/videos
+
+# Folder where generated thumbnails and previews are stored
+DATA_FOLDER=./data
+
+# Flask bind configuration
+HOST=0.0.0.0
+PORT=3232
+
+# Optional login protection (set APP_PASSWORD to require sign-in)
+APP_PASSWORD=change-me
+
+# Strong random secret used to sign the login session cookie
+APP_SECRET_KEY=replace-with-a-long-random-secret
