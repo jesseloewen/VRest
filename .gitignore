@@ -22,11 +22,10 @@ dist/
 .coverage
 .coverage.*
 htmlcov/
+cache/
 
 # Local environment files
 .env
-.env.*
-!.env copy.example
 ENVIRONMENT
 
 # Generated app data cache

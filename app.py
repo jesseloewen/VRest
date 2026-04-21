@@ -3,6 +3,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import secrets
 import subprocess
 import tempfile
@@ -85,6 +86,7 @@ catalog_lock = threading.Lock()
 catalog_tree: Dict = {"name": "Videos", "path": "", "folders": [], "files": []}
 catalog_files: List[Dict] = []
 video_index: Dict[str, Path] = {}
+subtitle_index: Dict[str, Dict[str, Dict[str, str]]] = {}
 
 generation_lock = threading.Lock()
 generation_status: Dict[str, Dict[str, str]] = {}
@@ -121,20 +123,6 @@ def resolve_video_path(rel_path: str) -> Optional[Path]:
     return candidate
 
 
-def resolve_subtitle_path(rel_path: str) -> Optional[Path]:
-    if VIDEO_ROOT is None:
-        return None
-    normalized = normalize_rel_path(rel_path)
-    candidate = (VIDEO_ROOT / normalized).resolve()
-    try:
-        candidate.relative_to(VIDEO_ROOT)
-    except ValueError:
-        return None
-    if not candidate.is_file() or candidate.suffix.lower() != ".srt":
-        return None
-    return candidate
-
-
 def thumbnail_cache_path(rel_path: str) -> Path:
     safe_rel = normalize_rel_path(rel_path)
     target = THUMBNAIL_ROOT / f"{safe_rel}.jpg"
@@ -149,83 +137,108 @@ def preview_cache_path(rel_path: str) -> Path:
     return target
 
 
-def set_generation_status(rel_path: str, key: str, value: str) -> None:
-    with generation_lock:
-        state = generation_status.setdefault(
-            rel_path, {"thumbnail": "missing", "preview": "missing"}
-        )
-        state[key] = value
+def subtitle_cache_path(rel_path: str, track_id: str) -> Path:
+    safe_rel = normalize_rel_path(rel_path)
+    safe_track = re.sub(r"[^a-zA-Z0-9._-]", "_", track_id)
+    target = SUBTITLE_ROOT / f"{safe_rel}.{safe_track}.vtt"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    return target
 
 
-def subtitle_language_meta(raw_hint: str) -> Tuple[str, str]:
-    hint = (raw_hint or "").strip().replace("_", "-")
-    if not hint:
-        return "en", "English"
+def normalize_language_code(value: str) -> str:
+    lowered = (value or "").strip().lower().replace("_", "-")
+    if not lowered:
+        return "und"
 
-    lower_hint = hint.lower()
-    known = {
-        "en": "English",
-        "english": "English",
-        "de": "German",
-        "german": "German",
-        "fr": "French",
-        "french": "French",
-        "es": "Spanish",
-        "spanish": "Spanish",
-        "it": "Italian",
-        "italian": "Italian",
-        "pt": "Portuguese",
-        "portuguese": "Portuguese",
-        "nl": "Dutch",
-        "dutch": "Dutch",
-        "pl": "Polish",
-        "polish": "Polish",
-        "sv": "Swedish",
-        "swedish": "Swedish",
-        "ja": "Japanese",
-        "japanese": "Japanese",
-        "ko": "Korean",
-        "korean": "Korean",
-        "zh": "Chinese",
-        "chinese": "Chinese",
+    alias_map = {
+        "eng": "en",
+        "english": "en",
+        "fre": "fr",
+        "fra": "fr",
+        "ger": "de",
+        "deu": "de",
+        "spa": "es",
+        "esl": "es",
+        "ita": "it",
+        "jpn": "ja",
+        "japanese": "ja",
+        "kor": "ko",
+        "korean": "ko",
+        "zho": "zh",
+        "chi": "zh",
+        "chinese": "zh",
     }
-    if lower_hint in known:
-        label = known[lower_hint]
-        lang_code = lower_hint[:2] if len(lower_hint) >= 2 else "en"
-        return lang_code, label
+    if lowered in alias_map:
+        return alias_map[lowered]
 
-    lang_code = lower_hint[:2] if len(lower_hint) >= 2 else "en"
-    return lang_code, hint.replace("-", " ").title()
-
-
-def find_external_subtitles(video_path: Path) -> List[Dict[str, str]]:
-    base_stem = video_path.stem
-    subs: List[Dict[str, str]] = []
-
-    for srt_file in sorted(video_path.parent.glob(f"{base_stem}*.srt")):
-        stem_name = srt_file.stem
-        if stem_name != base_stem and not stem_name.startswith(f"{base_stem}."):
-            continue
-
-        suffix_hint = stem_name[len(base_stem) :].lstrip(".")
-        srclang, label = subtitle_language_meta(suffix_hint)
-        rel_sub = normalize_rel_path(srt_file.relative_to(VIDEO_ROOT).as_posix())
-
-        subs.append(
-            {
-                "kind": "captions",
-                "source": "external",
-                "label": label,
-                "srclang": srclang,
-                "src": f"/api/subtitle/external/{rel_sub}",
-                "default": suffix_hint in {"", "en", "english"},
-            }
-        )
-
-    return subs
+    tokens = re.split(r"[^a-z0-9]+", lowered)
+    token = tokens[0] if tokens and tokens[0] else lowered
+    if token in alias_map:
+        return alias_map[token]
+    if re.fullmatch(r"[a-z]{2}(-[a-z]{2})?", lowered):
+        return lowered
+    if re.fullmatch(r"[a-z]{3}", token):
+        return token
+    return token[:2] if len(token) >= 2 else "und"
 
 
-def find_embedded_subtitles(video_path: Path, rel_video_path: str) -> List[Dict[str, str]]:
+def is_english_language(language_code: str, label: str = "") -> bool:
+    lang = normalize_language_code(language_code)
+    if lang == "en" or lang.startswith("en-"):
+        return True
+    return "english" in (label or "").strip().lower()
+
+
+def language_label(language_code: str) -> str:
+    lang = normalize_language_code(language_code)
+    labels = {
+        "en": "English",
+        "es": "Spanish",
+        "fr": "French",
+        "de": "German",
+        "it": "Italian",
+        "pt": "Portuguese",
+        "ru": "Russian",
+        "ja": "Japanese",
+        "ko": "Korean",
+        "zh": "Chinese",
+        "ar": "Arabic",
+        "hi": "Hindi",
+        "tr": "Turkish",
+        "nl": "Dutch",
+        "sv": "Swedish",
+    }
+    if lang in labels:
+        return labels[lang]
+    if lang == "und":
+        return "Unknown"
+    if len(lang) == 2:
+        return lang.upper()
+    return lang
+
+
+def guess_external_subtitle_language(video_stem: str, subtitle_path: Path) -> Tuple[str, str]:
+    suffix_part = subtitle_path.stem[len(video_stem) :].lstrip("._- ")
+    if not suffix_part:
+        return "und", "External"
+
+    tokens = [token for token in re.split(r"[._\-\s]+", suffix_part) if token]
+    if not tokens:
+        return "und", "External"
+
+    lang_code = normalize_language_code(tokens[0])
+    label_tokens = [token for token in tokens[1:] if token]
+    if not label_tokens and lang_code != "und":
+        label = language_label(lang_code)
+    elif not label_tokens:
+        label = suffix_part
+    else:
+        label = " ".join(label_tokens)
+
+    return lang_code, label
+
+
+def probe_embedded_subtitle_sources(video_path: Path) -> List[Dict[str, str]]:
     if not FFPROBE_AVAILABLE:
         return []
 
@@ -236,7 +249,7 @@ def find_embedded_subtitles(video_path: Path, rel_video_path: str) -> List[Dict[
         "-select_streams",
         "s",
         "-show_entries",
-        "stream=index:stream_tags=language,title",
+        "stream=index,codec_name:stream_tags=language,title",
         "-of",
         "json",
         str(video_path),
@@ -256,86 +269,200 @@ def find_embedded_subtitles(video_path: Path, rel_video_path: str) -> List[Dict[
         return []
 
     try:
-        data = json.loads(result.stdout or "{}")
+        payload = json.loads(result.stdout or "{}")
     except json.JSONDecodeError:
         return []
 
-    tracks: List[Dict[str, str]] = []
-    streams = data.get("streams", [])
-    for ordinal, stream in enumerate(streams, start=1):
-        stream_index = stream.get("index")
+    streams = payload.get("streams", [])
+    discovered: List[Dict[str, str]] = []
+    for stream_pos, stream in enumerate(streams):
         tags = stream.get("tags") or {}
-        language = str(tags.get("language", "") or "").strip()
-        title = str(tags.get("title", "") or "").strip()
-
-        if language:
-            srclang, language_label = subtitle_language_meta(language)
-        else:
-            srclang, language_label = ("en", "Embedded")
-
-        label = title or f"Embedded {ordinal} ({language_label})"
-        tracks.append(
+        lang = normalize_language_code(str(tags.get("language") or "und"))
+        title = str(tags.get("title") or "").strip()
+        label = title or language_label(lang)
+        codec_name = str(stream.get("codec_name") or "").strip().lower()
+        stream_index = int(stream.get("index", stream_pos))
+        track_id = f"emb-{stream_pos}-{lang}"
+        discovered.append(
             {
-                "kind": "captions",
-                "source": "embedded",
+                "id": track_id,
+                "kind": "embedded",
+                "lang": lang,
                 "label": label,
-                "srclang": srclang,
-                "src": f"/api/subtitle/embedded/{rel_video_path}?stream_index={stream_index}",
-                "default": False,
+                "stream_pos": str(stream_pos),
+                "stream_index": str(stream_index),
+                "codec": codec_name,
             }
         )
 
-    return tracks
+    return discovered
 
 
-def convert_external_srt_to_vtt(subtitle_path: Path, out_path: Path) -> bool:
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(subtitle_path),
-        str(out_path),
-    ]
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=120,
+def discover_external_subtitle_sources(video_path: Path, rel_video_path: str) -> List[Dict[str, str]]:
+    stem = video_path.stem
+    parent = video_path.parent
+    discovered: List[Dict[str, str]] = []
+
+    for path in sorted(parent.glob("*.srt")):
+        if not path.is_file():
+            continue
+        name = path.name
+        if name != f"{stem}.srt" and not name.startswith(f"{stem}."):
+            continue
+
+        lang, label = guess_external_subtitle_language(stem, path)
+        track_name = path.stem[len(stem) :].lstrip("._- ") or "external"
+        safe_track_name = re.sub(r"[^a-zA-Z0-9._-]", "_", track_name.lower())
+        track_id = f"ext-{safe_track_name}"
+
+        rel_srt = normalize_rel_path(path.relative_to(VIDEO_ROOT).as_posix()) if VIDEO_ROOT else ""
+        discovered.append(
+            {
+                "id": track_id,
+                "kind": "external",
+                "lang": lang,
+                "label": label,
+                "rel_srt": rel_srt,
+                "source_video": rel_video_path,
+            }
         )
-    except subprocess.TimeoutExpired:
+
+    return discovered
+
+
+def sort_subtitle_tracks(tracks: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    return sorted(
+        tracks,
+        key=lambda track: (
+            0 if is_english_language(track.get("lang", ""), track.get("label", "")) else 1,
+            track.get("label", "").lower(),
+            track.get("id", "").lower(),
+        ),
+    )
+
+
+def discover_subtitles_for_video(video_path: Path, rel_video_path: str) -> Tuple[List[Dict], Dict[str, Dict[str, str]]]:
+    source_rows = discover_external_subtitle_sources(video_path, rel_video_path)
+    source_rows.extend(probe_embedded_subtitle_sources(video_path))
+    ordered = sort_subtitle_tracks(source_rows)
+
+    public_tracks: List[Dict] = []
+    source_map: Dict[str, Dict[str, str]] = {}
+    for idx, source in enumerate(ordered):
+        track_id = source["id"]
+        source_map[track_id] = source
+        public_tracks.append(
+            {
+                "id": track_id,
+                "lang": source.get("lang", "und"),
+                "label": source.get("label", "Subtitle"),
+                "default": idx == 0,
+            }
+        )
+
+    return public_tracks, source_map
+
+
+def convert_srt_to_vtt(srt_path: Path, out_path: Path) -> bool:
+    try:
+        raw = srt_path.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
         return False
 
-    return result.returncode == 0 and out_path.exists()
+    lines = raw.splitlines()
+    converted: List[str] = ["WEBVTT", ""]
 
+    for line in lines:
+        stripped = line.strip()
+        if re.fullmatch(r"\d+", stripped):
+            continue
+        if "-->" in line:
+            converted.append(line.replace(",", "."))
+            continue
+        converted.append(line)
 
-def convert_embedded_subtitle_to_vtt(video_path: Path, stream_index: int, out_path: Path) -> bool:
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(video_path),
-        "-map",
-        f"0:{stream_index}",
-        "-f",
-        "webvtt",
-        str(out_path),
-    ]
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=180,
-        )
-    except subprocess.TimeoutExpired:
+        out_path.write_text("\n".join(converted) + "\n", encoding="utf-8")
+    except OSError:
         return False
+    return out_path.exists()
 
-    return result.returncode == 0 and out_path.exists()
+
+def ensure_subtitle_cache(rel_path: str, track_id: str) -> Optional[Path]:
+    normalized = normalize_rel_path(rel_path)
+    cache_path = subtitle_cache_path(normalized, track_id)
+
+    with catalog_lock:
+        tracks_for_video = subtitle_index.get(normalized, {})
+        source = tracks_for_video.get(track_id)
+
+    if not source:
+        return None
+
+    kind = source.get("kind", "")
+
+    if kind == "external":
+        if VIDEO_ROOT is None:
+            return None
+        rel_srt = normalize_rel_path(source.get("rel_srt", ""))
+        srt_path = (VIDEO_ROOT / rel_srt).resolve()
+        try:
+            srt_path.relative_to(VIDEO_ROOT)
+        except ValueError:
+            return None
+        if not srt_path.exists() or srt_path.suffix.lower() != ".srt":
+            return None
+
+        if cache_path.exists() and cache_path.stat().st_mtime >= srt_path.stat().st_mtime:
+            return cache_path
+
+        ok = convert_srt_to_vtt(srt_path, cache_path)
+        return cache_path if ok else None
+
+    if kind == "embedded":
+        if not FFMPEG_AVAILABLE:
+            return None
+        video_path = resolve_video_path(normalized)
+        if video_path is None:
+            return None
+
+        if cache_path.exists() and cache_path.stat().st_mtime >= video_path.stat().st_mtime:
+            return cache_path
+
+        stream_pos = source.get("stream_pos", "0")
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(video_path),
+            "-map",
+            f"0:s:{stream_pos}",
+            "-f",
+            "webvtt",
+            str(cache_path),
+        ]
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=180,
+            )
+        except subprocess.TimeoutExpired:
+            return None
+
+        return cache_path if result.returncode == 0 and cache_path.exists() else None
+
+    return None
+
+
+def set_generation_status(rel_path: str, key: str, value: str) -> None:
+    with generation_lock:
+        state = generation_status.setdefault(
+            rel_path, {"thumbnail": "missing", "preview": "missing"}
+        )
+        state[key] = value
 
 
 def get_duration_seconds(video_path: Path) -> Optional[float]:
@@ -560,12 +687,13 @@ def sort_tree(node: Dict) -> None:
         sort_tree(child)
 
 
-def scan_video_library() -> Tuple[Dict, List[Dict], Dict[str, Path]]:
+def scan_video_library() -> Tuple[Dict, List[Dict], Dict[str, Path], Dict[str, Dict[str, Dict[str, str]]]]:
     if VIDEO_ROOT is None:
-        return {"name": "Videos", "path": "", "folders": [], "files": []}, [], {}
+        return {"name": "Videos", "path": "", "folders": [], "files": []}, [], {}, {}
 
     files: List[Dict] = []
     index: Dict[str, Path] = {}
+    subs_index: Dict[str, Dict[str, Dict[str, str]]] = {}
 
     for path in sorted(VIDEO_ROOT.rglob("*")):
         if not is_video_file(path):
@@ -581,8 +709,14 @@ def scan_video_library() -> Tuple[Dict, List[Dict], Dict[str, Path]]:
             "folder": folder,
             "ext": path.suffix.lower(),
         }
+
+        subtitle_tracks, subtitle_sources = discover_subtitles_for_video(path, rel)
+        metadata["subtitles"] = subtitle_tracks
+
         files.append(metadata)
         index[rel] = path
+        if subtitle_sources:
+            subs_index[rel] = subtitle_sources
 
     root = {
         "name": VIDEO_ROOT.name or "Videos",
@@ -603,7 +737,7 @@ def scan_video_library() -> Tuple[Dict, List[Dict], Dict[str, Path]]:
 
     sort_tree(root)
     files.sort(key=lambda x: x["path"].lower())
-    return root, files, index
+    return root, files, index, subs_index
 
 
 def thumbnail_worker(rel_path: str) -> None:
@@ -658,12 +792,13 @@ def generate_preview_sync(rel_path: str) -> bool:
 
 
 def refresh_catalog() -> None:
-    root, files, index = scan_video_library()
+    root, files, index, subs = scan_video_library()
     with catalog_lock:
-        global catalog_tree, catalog_files, video_index
+        global catalog_tree, catalog_files, video_index, subtitle_index
         catalog_tree = root
         catalog_files = files
         video_index = index
+        subtitle_index = subs
 
     for file_meta in files:
         queue_thumbnail_generation(file_meta["path"])
@@ -801,77 +936,17 @@ def api_video(rel_path: str):
     return send_file(video_path, conditional=True)
 
 
-@app.get("/api/subtitles/<path:rel_video_path>")
-def api_subtitles(rel_video_path: str):
-    normalized = normalize_rel_path(rel_video_path)
-    video_path = resolve_video_path(normalized)
-    if video_path is None:
+@app.get("/api/subtitle/<path:rel_path>/<track_id>.vtt")
+def api_subtitle(rel_path: str, track_id: str):
+    normalized = normalize_rel_path(rel_path)
+    if resolve_video_path(normalized) is None:
         abort(404)
 
-    tracks = find_external_subtitles(video_path)
-    tracks.extend(find_embedded_subtitles(video_path, normalized))
-
-    # Keep at most one subtitle track per language to avoid stacked duplicate captions.
-    # External sidecar files are preferred over embedded tracks for the same language.
-    deduped_by_lang: Dict[str, Dict[str, str]] = {}
-    for track in tracks:
-        lang_key = (track.get("srclang") or "").strip().lower() or "und"
-        existing = deduped_by_lang.get(lang_key)
-        if existing is None:
-            deduped_by_lang[lang_key] = track
-            continue
-
-        if existing.get("source") == "embedded" and track.get("source") == "external":
-            deduped_by_lang[lang_key] = track
-
-    tracks = list(deduped_by_lang.values())
-
-    has_default = any(track.get("default") for track in tracks)
-    if tracks and not has_default:
-        tracks[0]["default"] = True
-
-    return jsonify({"tracks": tracks})
-
-
-@app.get("/api/subtitle/external/<path:rel_subtitle_path>")
-def api_subtitle_external(rel_subtitle_path: str):
-    normalized = normalize_rel_path(rel_subtitle_path)
-    subtitle_path = resolve_subtitle_path(normalized)
-    if subtitle_path is None:
+    cache = ensure_subtitle_cache(normalized, track_id)
+    if cache is None or not cache.exists():
         abort(404)
 
-    cache_path = SUBTITLE_ROOT / "external" / f"{normalized}.vtt"
-    if not cache_path.exists() or subtitle_path.stat().st_mtime > cache_path.stat().st_mtime:
-        if not FFMPEG_AVAILABLE:
-            return jsonify({"error": "ffmpeg not available"}), 500
-        ok = convert_external_srt_to_vtt(subtitle_path, cache_path)
-        if not ok:
-            return jsonify({"error": "failed to convert subtitle"}), 500
-
-    return send_file(cache_path, mimetype="text/vtt", conditional=True)
-
-
-@app.get("/api/subtitle/embedded/<path:rel_video_path>")
-def api_subtitle_embedded(rel_video_path: str):
-    normalized = normalize_rel_path(rel_video_path)
-    video_path = resolve_video_path(normalized)
-    if video_path is None:
-        abort(404)
-
-    stream_index_text = request.args.get("stream_index", "").strip()
-    if not stream_index_text.isdigit():
-        return jsonify({"error": "stream_index must be an integer"}), 400
-    stream_index = int(stream_index_text)
-
-    cache_path = SUBTITLE_ROOT / "embedded" / normalized / f"stream_{stream_index}.vtt"
-    if not cache_path.exists() or video_path.stat().st_mtime > cache_path.stat().st_mtime:
-        if not FFMPEG_AVAILABLE:
-            return jsonify({"error": "ffmpeg not available"}), 500
-        ok = convert_embedded_subtitle_to_vtt(video_path, stream_index, cache_path)
-        if not ok:
-            return jsonify({"error": "failed to extract embedded subtitle"}), 500
-
-    return send_file(cache_path, mimetype="text/vtt", conditional=True)
+    return send_file(cache, mimetype="text/vtt", conditional=True)
 
 
 @app.get("/api/status/<path:rel_path>")
