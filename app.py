@@ -8,6 +8,8 @@ import secrets
 import subprocess
 import tempfile
 import threading
+import time
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 from typing import Dict, List, Optional, Tuple
@@ -37,6 +39,7 @@ HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "3232"))
 APP_PASSWORD = os.getenv("APP_PASSWORD", "")
 APP_SECRET_KEY = os.getenv("APP_SECRET_KEY", "").strip()
+APP_SESSION_COOKIE_NAME = os.getenv("APP_SESSION_COOKIE_NAME", "").strip()
 
 CONFIG_ERROR: Optional[str] = None
 VIDEO_ROOT: Optional[Path] = None
@@ -54,9 +57,11 @@ DATA_ROOT = Path(DATA_FOLDER).expanduser().resolve()
 THUMBNAIL_ROOT = DATA_ROOT / "thumbnails"
 PREVIEW_ROOT = DATA_ROOT / "previews"
 SUBTITLE_ROOT = DATA_ROOT / "subtitles"
+SCRUB_ROOT = DATA_ROOT / "scrubbing"
 THUMBNAIL_ROOT.mkdir(parents=True, exist_ok=True)
 PREVIEW_ROOT.mkdir(parents=True, exist_ok=True)
 SUBTITLE_ROOT.mkdir(parents=True, exist_ok=True)
+SCRUB_ROOT.mkdir(parents=True, exist_ok=True)
 
 FFMPEG_AVAILABLE = subprocess.call(
     ["where" if os.name == "nt" else "which", "ffmpeg"],
@@ -72,6 +77,40 @@ FFPROBE_AVAILABLE = subprocess.call(
 if not FFMPEG_AVAILABLE or not FFPROBE_AVAILABLE:
     LOGGER.warning("ffmpeg/ffprobe not found on PATH; media generation will fail until installed.")
 
+
+def ffmpeg_supports_token(command: List[str], token: str) -> bool:
+    if not FFMPEG_AVAILABLE:
+        return False
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=20,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+
+    text_blob = f"{result.stdout}\n{result.stderr}".lower()
+    return token.lower() in text_blob
+
+
+NVIDIA_CUDA_AVAILABLE = ffmpeg_supports_token(["ffmpeg", "-hide_banner", "-hwaccels"], "cuda")
+NVIDIA_NVENC_AVAILABLE = ffmpeg_supports_token(
+    ["ffmpeg", "-hide_banner", "-encoders"], "h264_nvenc"
+)
+
+if NVIDIA_CUDA_AVAILABLE:
+    LOGGER.info("NVIDIA CUDA decode available for ffmpeg.")
+else:
+    LOGGER.warning("NVIDIA CUDA decode unavailable; using CPU fallback for some jobs.")
+
+if NVIDIA_NVENC_AVAILABLE:
+    LOGGER.info("NVIDIA NVENC encode available for preview generation.")
+else:
+    LOGGER.warning("NVIDIA NVENC unavailable; using libx264 fallback for preview generation.")
+
 app = Flask(__name__)
 
 if not APP_SECRET_KEY:
@@ -79,18 +118,44 @@ if not APP_SECRET_KEY:
     LOGGER.warning("APP_SECRET_KEY not set; using a temporary key for this process.")
 
 app.secret_key = APP_SECRET_KEY
+default_session_cookie_name = f"vrest_session_{PORT}"
+session_cookie_name = APP_SESSION_COOKIE_NAME or default_session_cookie_name
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_NAME"] = session_cookie_name
 
 catalog_lock = threading.Lock()
 catalog_tree: Dict = {"name": "Videos", "path": "", "folders": [], "files": []}
 catalog_files: List[Dict] = []
 video_index: Dict[str, Path] = {}
 subtitle_index: Dict[str, Dict[str, Dict[str, str]]] = {}
+catalog_state_lock = threading.Lock()
+catalog_refresh_in_progress = False
+catalog_has_completed_scan = False
+catalog_last_scan_ts = 0.0
+CATALOG_REFRESH_MIN_INTERVAL_SECONDS = 12
 
 generation_lock = threading.Lock()
 generation_status: Dict[str, Dict[str, str]] = {}
 thumbnail_executor = ThreadPoolExecutor(max_workers=4)
+preview_executor = ThreadPoolExecutor(max_workers=2)
+scrub_executor = ThreadPoolExecutor(max_workers=2)
+
+SCRUB_INTERVAL_SECONDS = 10
+SCRUB_TILE_COLUMNS = 10
+SCRUB_TILE_ROWS = 10
+SCRUB_CELL_WIDTH = 160
+SCRUB_CELL_HEIGHT = 90
+
+scrub_pregen_lock = threading.Lock()
+scrub_pregen_state: Dict[str, object] = {
+    "running": False,
+    "total": 0,
+    "done": 0,
+    "failed": 0,
+    "startedAt": None,
+    "finishedAt": None,
+}
 
 
 def auth_enabled() -> bool:
@@ -137,12 +202,69 @@ def preview_cache_path(rel_path: str) -> Path:
     return target
 
 
+def scrub_metadata_cache_path(rel_path: str) -> Path:
+    safe_rel = normalize_rel_path(rel_path)
+    target = SCRUB_ROOT / f"{safe_rel}.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def scrub_sprite_dir(rel_path: str) -> Path:
+    safe_rel = normalize_rel_path(rel_path)
+    target = SCRUB_ROOT / f"{safe_rel}.sprites"
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
 def subtitle_cache_path(rel_path: str, track_id: str) -> Path:
     safe_rel = normalize_rel_path(rel_path)
     safe_track = re.sub(r"[^a-zA-Z0-9._-]", "_", track_id)
     target = SUBTITLE_ROOT / f"{safe_rel}.{safe_track}.vtt"
     target.parent.mkdir(parents=True, exist_ok=True)
     return target
+
+
+def ffmpeg_hwaccel_input_args() -> List[str]:
+    if not NVIDIA_CUDA_AVAILABLE:
+        return []
+    return ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
+
+
+def run_ffmpeg_with_optional_fallback(
+    primary_cmd: List[str], fallback_cmd: Optional[List[str]] = None, timeout: int = 240
+) -> Tuple[bool, str]:
+    try:
+        first_result = subprocess.run(
+            primary_cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "ffmpeg command timed out"
+
+    if first_result.returncode == 0:
+        return True, ""
+
+    if fallback_cmd is None:
+        return False, first_result.stderr or first_result.stdout
+
+    try:
+        second_result = subprocess.run(
+            fallback_cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "ffmpeg fallback command timed out"
+
+    if second_result.returncode == 0:
+        return True, ""
+
+    return False, second_result.stderr or second_result.stdout
 
 
 def normalize_language_code(value: str) -> str:
@@ -460,8 +582,12 @@ def ensure_subtitle_cache(rel_path: str, track_id: str) -> Optional[Path]:
 def set_generation_status(rel_path: str, key: str, value: str) -> None:
     with generation_lock:
         state = generation_status.setdefault(
-            rel_path, {"thumbnail": "missing", "preview": "missing"}
+            rel_path,
+            {"thumbnail": "missing", "preview": "missing", "scrub": "missing"},
         )
+        state.setdefault("thumbnail", "missing")
+        state.setdefault("preview", "missing")
+        state.setdefault("scrub", "missing")
         state[key] = value
 
 
@@ -503,7 +629,22 @@ def generate_thumbnail(video_path: Path, out_path: Path) -> bool:
         return False
     duration = get_duration_seconds(video_path) or 0.0
     seek = max(duration * 0.10, 0.0)
-    cmd = [
+    primary_cmd = [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        f"{seek:.3f}",
+        *ffmpeg_hwaccel_input_args(),
+        "-i",
+        str(video_path),
+        "-vframes",
+        "1",
+        "-q:v",
+        "2",
+        str(out_path),
+    ]
+
+    fallback_cmd = [
         "ffmpeg",
         "-y",
         "-ss",
@@ -517,12 +658,8 @@ def generate_thumbnail(video_path: Path, out_path: Path) -> bool:
         str(out_path),
     ]
 
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=240)
-    except subprocess.TimeoutExpired:
-        return False
-
-    return result.returncode == 0 and out_path.exists()
+    ok, _ = run_ffmpeg_with_optional_fallback(primary_cmd, fallback_cmd, timeout=240)
+    return ok and out_path.exists()
 
 
 def generate_preview(video_path: Path, out_path: Path) -> bool:
@@ -532,7 +669,31 @@ def generate_preview(video_path: Path, out_path: Path) -> bool:
     duration = get_duration_seconds(video_path)
     if not duration or duration <= 0:
         # Fallback when duration metadata is unavailable.
-        cmd = [
+        primary_cmd = [
+            "ffmpeg",
+            "-y",
+            "-ss",
+            "0",
+            *ffmpeg_hwaccel_input_args(),
+            "-i",
+            str(video_path),
+            "-t",
+            "12",
+            "-vf",
+            "scale=480:-2",
+            "-c:v",
+            "h264_nvenc" if NVIDIA_NVENC_AVAILABLE else "libx264",
+            "-preset",
+            "p4" if NVIDIA_NVENC_AVAILABLE else "ultrafast",
+            "-cq" if NVIDIA_NVENC_AVAILABLE else "-crf",
+            "30" if NVIDIA_NVENC_AVAILABLE else "28",
+            "-an",
+            "-movflags",
+            "+faststart",
+            str(out_path),
+        ]
+
+        fallback_cmd = [
             "ffmpeg",
             "-y",
             "-ss",
@@ -543,6 +704,8 @@ def generate_preview(video_path: Path, out_path: Path) -> bool:
             "12",
             "-vf",
             "scale=480:-2",
+            "-c:v",
+            "libx264",
             "-crf",
             "28",
             "-preset",
@@ -552,11 +715,9 @@ def generate_preview(video_path: Path, out_path: Path) -> bool:
             "+faststart",
             str(out_path),
         ]
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=360)
-        except subprocess.TimeoutExpired:
-            return False
-        return result.returncode == 0 and out_path.exists()
+
+        ok, _ = run_ffmpeg_with_optional_fallback(primary_cmd, fallback_cmd, timeout=360)
+        return ok and out_path.exists()
 
     target_total = min(12.0, duration)
     min_segment_duration = 0.8
@@ -586,12 +747,38 @@ def generate_preview(video_path: Path, out_path: Path) -> bool:
                 "-y",
                 "-ss",
                 f"{max(start, 0.0):.3f}",
+                *ffmpeg_hwaccel_input_args(),
                 "-i",
                 str(video_path),
                 "-t",
                 f"{segment_duration:.3f}",
                 "-vf",
                 "scale=480:-2",
+                "-c:v",
+                "h264_nvenc" if NVIDIA_NVENC_AVAILABLE else "libx264",
+                "-cq" if NVIDIA_NVENC_AVAILABLE else "-crf",
+                "30" if NVIDIA_NVENC_AVAILABLE else "28",
+                "-preset",
+                "p4" if NVIDIA_NVENC_AVAILABLE else "ultrafast",
+                "-an",
+                "-movflags",
+                "+faststart",
+                str(segment_path),
+            ]
+
+            segment_fallback_cmd = [
+                "ffmpeg",
+                "-y",
+                "-ss",
+                f"{max(start, 0.0):.3f}",
+                "-i",
+                str(video_path),
+                "-t",
+                f"{segment_duration:.3f}",
+                "-vf",
+                "scale=480:-2",
+                "-c:v",
+                "libx264",
                 "-crf",
                 "28",
                 "-preset",
@@ -602,18 +789,12 @@ def generate_preview(video_path: Path, out_path: Path) -> bool:
                 str(segment_path),
             ]
 
-            try:
-                segment_result = subprocess.run(
-                    segment_cmd,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=240,
-                )
-            except subprocess.TimeoutExpired:
-                return False
-
-            if segment_result.returncode != 0 or not segment_path.exists():
+            ok, _ = run_ffmpeg_with_optional_fallback(
+                segment_cmd,
+                segment_fallback_cmd,
+                timeout=240,
+            )
+            if not ok or not segment_path.exists():
                 return False
 
             segment_files.append(segment_path)
@@ -652,6 +833,172 @@ def generate_preview(video_path: Path, out_path: Path) -> bool:
             return False
 
         return concat_result.returncode == 0 and out_path.exists()
+
+
+def remove_scrub_sprite_files(sprite_dir: Path) -> None:
+    if not sprite_dir.exists():
+        return
+    for candidate in sprite_dir.glob("sheet_*.jpg"):
+        try:
+            candidate.unlink()
+        except OSError:
+            continue
+
+
+def build_scrub_metadata(
+    rel_path: str, duration: float, sheet_files: List[Path], generated_ts: str
+) -> Dict:
+    frames_per_sheet = SCRUB_TILE_COLUMNS * SCRUB_TILE_ROWS
+    total_frames = int(duration // SCRUB_INTERVAL_SECONDS) + 1
+
+    sheets: List[Dict[str, object]] = []
+    for index, sheet_file in enumerate(sheet_files):
+        start = index * frames_per_sheet
+        end = min(total_frames, start + frames_per_sheet)
+        count = max(0, end - start)
+        sheets.append(
+            {
+                "index": index,
+                "file": sheet_file.name,
+                "count": count,
+            }
+        )
+
+    frames: List[Dict[str, object]] = []
+    for frame_idx in range(total_frames):
+        sheet_index = frame_idx // frames_per_sheet
+        pos = frame_idx % frames_per_sheet
+        col = pos % SCRUB_TILE_COLUMNS
+        row = pos // SCRUB_TILE_COLUMNS
+        frames.append(
+            {
+                "timestamp": frame_idx * SCRUB_INTERVAL_SECONDS,
+                "sheet": sheet_index,
+                "x": col * SCRUB_CELL_WIDTH,
+                "y": row * SCRUB_CELL_HEIGHT,
+                "w": SCRUB_CELL_WIDTH,
+                "h": SCRUB_CELL_HEIGHT,
+            }
+        )
+
+    return {
+        "version": 1,
+        "videoPath": rel_path,
+        "durationSeconds": duration,
+        "generatedAt": generated_ts,
+        "intervalSeconds": SCRUB_INTERVAL_SECONDS,
+        "tile": {
+            "columns": SCRUB_TILE_COLUMNS,
+            "rows": SCRUB_TILE_ROWS,
+            "cellWidth": SCRUB_CELL_WIDTH,
+            "cellHeight": SCRUB_CELL_HEIGHT,
+        },
+        "sheets": sheets,
+        "frames": frames,
+    }
+
+
+def generate_scrub_sprites(video_path: Path, rel_path: str, force: bool = False) -> bool:
+    if not FFMPEG_AVAILABLE:
+        return False
+
+    metadata_path = scrub_metadata_cache_path(rel_path)
+    sprite_dir = scrub_sprite_dir(rel_path)
+
+    if not force and metadata_path.exists() and metadata_path.stat().st_mtime >= video_path.stat().st_mtime:
+        set_generation_status(rel_path, "scrub", "ready")
+        return True
+
+    set_generation_status(rel_path, "scrub", "pending")
+    remove_scrub_sprite_files(sprite_dir)
+
+    sheet_pattern = sprite_dir / "sheet_%04d.jpg"
+    filter_graph = (
+        f"fps=1/{SCRUB_INTERVAL_SECONDS},"
+        f"scale={SCRUB_CELL_WIDTH}:{SCRUB_CELL_HEIGHT}:force_original_aspect_ratio=decrease,"
+        f"pad={SCRUB_CELL_WIDTH}:{SCRUB_CELL_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,"
+        f"tile={SCRUB_TILE_COLUMNS}x{SCRUB_TILE_ROWS}"
+    )
+
+    primary_cmd = [
+        "ffmpeg",
+        "-y",
+        *ffmpeg_hwaccel_input_args(),
+        "-i",
+        str(video_path),
+        "-vf",
+        filter_graph,
+        "-q:v",
+        "4",
+        "-start_number",
+        "0",
+        str(sheet_pattern),
+    ]
+
+    fallback_cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(video_path),
+        "-vf",
+        filter_graph,
+        "-q:v",
+        "4",
+        "-start_number",
+        "0",
+        str(sheet_pattern),
+    ]
+
+    ok, error = run_ffmpeg_with_optional_fallback(primary_cmd, fallback_cmd, timeout=900)
+    if not ok:
+        LOGGER.warning("Scrub sprite generation failed for %s: %s", rel_path, error)
+        set_generation_status(rel_path, "scrub", "failed")
+        return False
+
+    sheet_files = sorted(sprite_dir.glob("sheet_*.jpg"))
+    if not sheet_files:
+        set_generation_status(rel_path, "scrub", "failed")
+        return False
+
+    duration = get_duration_seconds(video_path) or 0.0
+    generated_ts = datetime.now(timezone.utc).isoformat()
+    metadata = build_scrub_metadata(rel_path, duration, sheet_files, generated_ts)
+
+    try:
+        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    except OSError:
+        set_generation_status(rel_path, "scrub", "failed")
+        return False
+
+    set_generation_status(rel_path, "scrub", "ready")
+    return True
+
+
+def ensure_scrub_metadata(rel_path: str, force: bool = False) -> Optional[Path]:
+    normalized = normalize_rel_path(rel_path)
+    video_path = resolve_video_path(normalized)
+    if video_path is None:
+        return None
+
+    metadata_path = scrub_metadata_cache_path(normalized)
+    if (
+        not force
+        and metadata_path.exists()
+        and metadata_path.stat().st_mtime >= video_path.stat().st_mtime
+    ):
+        set_generation_status(normalized, "scrub", "ready")
+        return metadata_path
+
+    ok = generate_scrub_sprites(video_path, normalized, force=force)
+    return metadata_path if ok and metadata_path.exists() else None
+
+
+def get_scrub_sprite_path(rel_path: str, sheet_index: int) -> Optional[Path]:
+    normalized = normalize_rel_path(rel_path)
+    sprite_file = scrub_sprite_dir(normalized) / f"sheet_{sheet_index:04d}.jpg"
+    if sprite_file.exists():
+        return sprite_file
+    return None
 
 
 def ensure_folder_node(
@@ -709,6 +1056,17 @@ def scan_video_library() -> Tuple[Dict, List[Dict], Dict[str, Path], Dict[str, D
             "folder": folder,
             "ext": path.suffix.lower(),
         }
+        try:
+            stats = path.stat()
+            added_ts = int(getattr(stats, "st_ctime", 0) or 0)
+            if added_ts <= 0:
+                added_ts = int(getattr(stats, "st_mtime", 0) or 0)
+        except OSError:
+            added_ts = None
+
+        metadata["dateAddedTs"] = added_ts
+        duration_seconds = get_duration_seconds(path)
+        metadata["durationSeconds"] = int(duration_seconds) if duration_seconds and duration_seconds > 0 else None
 
         subtitle_tracks, subtitle_sources = discover_subtitles_for_video(path, rel)
         metadata["subtitles"] = subtitle_tracks
@@ -744,6 +1102,7 @@ def thumbnail_worker(rel_path: str) -> None:
     out_path = thumbnail_cache_path(rel_path)
     if out_path.exists():
         set_generation_status(rel_path, "thumbnail", "ready")
+        queue_preview_generation(rel_path)
         return
 
     video_path = resolve_video_path(rel_path)
@@ -753,6 +1112,8 @@ def thumbnail_worker(rel_path: str) -> None:
 
     ok = generate_thumbnail(video_path, out_path)
     set_generation_status(rel_path, "thumbnail", "ready" if ok else "failed")
+    if ok:
+        queue_preview_generation(rel_path)
 
 
 def queue_thumbnail_generation(rel_path: str) -> None:
@@ -760,17 +1121,76 @@ def queue_thumbnail_generation(rel_path: str) -> None:
     out_path = thumbnail_cache_path(rel_path)
     if out_path.exists():
         set_generation_status(rel_path, "thumbnail", "ready")
+        queue_preview_generation(rel_path)
         return
 
     with generation_lock:
         state = generation_status.setdefault(
-            rel_path, {"thumbnail": "missing", "preview": "missing"}
+            rel_path,
+            {"thumbnail": "missing", "preview": "missing", "scrub": "missing"},
         )
         if state["thumbnail"] == "pending":
             return
         state["thumbnail"] = "pending"
 
     thumbnail_executor.submit(thumbnail_worker, rel_path)
+
+
+def preview_worker(rel_path: str) -> None:
+    generate_preview_sync(rel_path)
+
+
+def queue_preview_generation(rel_path: str) -> None:
+    rel_path = normalize_rel_path(rel_path)
+    out_path = preview_cache_path(rel_path)
+    if out_path.exists():
+        set_generation_status(rel_path, "preview", "ready")
+        return
+
+    with generation_lock:
+        state = generation_status.setdefault(
+            rel_path,
+            {"thumbnail": "missing", "preview": "missing", "scrub": "missing"},
+        )
+        if state["preview"] == "pending":
+            return
+        state["preview"] = "pending"
+
+    preview_executor.submit(preview_worker, rel_path)
+
+
+def scrub_worker(rel_path: str) -> None:
+    normalized = normalize_rel_path(rel_path)
+    video_path = resolve_video_path(normalized)
+    if video_path is None:
+        set_generation_status(normalized, "scrub", "failed")
+        return
+
+    ok = generate_scrub_sprites(video_path, normalized)
+    set_generation_status(normalized, "scrub", "ready" if ok else "failed")
+
+
+def queue_scrub_generation(rel_path: str) -> None:
+    normalized = normalize_rel_path(rel_path)
+    video_path = resolve_video_path(normalized)
+    if video_path is None:
+        return
+
+    metadata_path = scrub_metadata_cache_path(normalized)
+    if metadata_path.exists() and metadata_path.stat().st_mtime >= video_path.stat().st_mtime:
+        set_generation_status(normalized, "scrub", "ready")
+        return
+
+    with generation_lock:
+        state = generation_status.setdefault(
+            normalized,
+            {"thumbnail": "missing", "preview": "missing", "scrub": "missing"},
+        )
+        if state.get("scrub") == "pending":
+            return
+        state["scrub"] = "pending"
+
+    scrub_executor.submit(scrub_worker, normalized)
 
 
 def generate_preview_sync(rel_path: str) -> bool:
@@ -791,6 +1211,43 @@ def generate_preview_sync(rel_path: str) -> bool:
     return ok
 
 
+def scrub_pregenerate_worker(force: bool = False) -> None:
+    try:
+        with catalog_lock:
+            targets = [item["path"] for item in catalog_files]
+
+        with scrub_pregen_lock:
+            scrub_pregen_state.update(
+                {
+                    "running": True,
+                    "total": len(targets),
+                    "done": 0,
+                    "failed": 0,
+                    "startedAt": datetime.now(timezone.utc).isoformat(),
+                    "finishedAt": None,
+                }
+            )
+
+        for rel_path in targets:
+            meta = ensure_scrub_metadata(rel_path, force=force)
+            with scrub_pregen_lock:
+                scrub_pregen_state["done"] = int(scrub_pregen_state.get("done", 0)) + 1
+                if meta is None:
+                    scrub_pregen_state["failed"] = int(scrub_pregen_state.get("failed", 0)) + 1
+    finally:
+        with scrub_pregen_lock:
+            scrub_pregen_state["running"] = False
+            scrub_pregen_state["finishedAt"] = datetime.now(timezone.utc).isoformat()
+
+
+def start_scrub_pregeneration(force: bool = False) -> bool:
+    with scrub_pregen_lock:
+        if bool(scrub_pregen_state.get("running")):
+            return False
+    scrub_executor.submit(scrub_pregenerate_worker, force)
+    return True
+
+
 def refresh_catalog() -> None:
     root, files, index, subs = scan_video_library()
     with catalog_lock:
@@ -802,13 +1259,50 @@ def refresh_catalog() -> None:
 
     for file_meta in files:
         queue_thumbnail_generation(file_meta["path"])
+        queue_scrub_generation(file_meta["path"])
+
+
+def catalog_refresh_worker() -> None:
+    global catalog_refresh_in_progress, catalog_has_completed_scan, catalog_last_scan_ts
+    try:
+        refresh_catalog()
+        with catalog_lock:
+            indexed_count = len(catalog_files)
+        with catalog_state_lock:
+            catalog_has_completed_scan = True
+            catalog_last_scan_ts = time.time()
+        LOGGER.info("Indexed %d video files", indexed_count)
+    except Exception:
+        LOGGER.exception("Catalog refresh failed")
+    finally:
+        with catalog_state_lock:
+            catalog_refresh_in_progress = False
+
+
+def schedule_catalog_refresh(force: bool = False) -> bool:
+    global catalog_refresh_in_progress
+    if CONFIG_ERROR:
+        return False
+
+    with catalog_state_lock:
+        if catalog_refresh_in_progress:
+            return False
+        if (
+            not force
+            and catalog_has_completed_scan
+            and (time.time() - catalog_last_scan_ts) < CATALOG_REFRESH_MIN_INTERVAL_SECONDS
+        ):
+            return False
+        catalog_refresh_in_progress = True
+
+    threading.Thread(target=catalog_refresh_worker, daemon=True).start()
+    return True
 
 
 def background_startup_index() -> None:
     if CONFIG_ERROR:
         return
-    refresh_catalog()
-    LOGGER.info("Indexed %d video files", len(catalog_files))
+    schedule_catalog_refresh(force=True)
 
 
 @app.before_request
@@ -883,7 +1377,13 @@ def api_browse():
             }
         ), 400
 
-    refresh_catalog()
+    schedule_catalog_refresh()
+
+    with catalog_state_lock:
+        indexing = catalog_refresh_in_progress
+        has_scanned = catalog_has_completed_scan
+        last_scan_ts = catalog_last_scan_ts
+
     with catalog_lock:
         return jsonify(
             {
@@ -892,6 +1392,9 @@ def api_browse():
                 "count": len(catalog_files),
                 "ffmpeg": FFMPEG_AVAILABLE,
                 "ffprobe": FFPROBE_AVAILABLE,
+                "indexing": indexing,
+                "hasScanned": has_scanned,
+                "lastScanTs": last_scan_ts,
             }
         )
 
@@ -949,6 +1452,54 @@ def api_subtitle(rel_path: str, track_id: str):
     return send_file(cache, mimetype="text/vtt", conditional=True)
 
 
+@app.get("/api/scrub/<path:rel_path>/metadata")
+def api_scrub_metadata(rel_path: str):
+    normalized = normalize_rel_path(rel_path)
+    if resolve_video_path(normalized) is None:
+        abort(404)
+
+    metadata_path = ensure_scrub_metadata(normalized)
+    if metadata_path is None or not metadata_path.exists():
+        return jsonify({"status": "failed"}), 500
+
+    return send_file(metadata_path, mimetype="application/json", conditional=True)
+
+
+@app.get("/api/scrub/<path:rel_path>/sprite/<int:sheet_index>.jpg")
+def api_scrub_sprite(rel_path: str, sheet_index: int):
+    normalized = normalize_rel_path(rel_path)
+    if resolve_video_path(normalized) is None:
+        abort(404)
+
+    sprite = get_scrub_sprite_path(normalized, sheet_index)
+    if sprite is None:
+        metadata_path = ensure_scrub_metadata(normalized)
+        if metadata_path is None:
+            abort(404)
+        sprite = get_scrub_sprite_path(normalized, sheet_index)
+        if sprite is None:
+            abort(404)
+
+    return send_file(sprite, mimetype="image/jpeg", conditional=True)
+
+
+@app.post("/api/scrub/pregenerate")
+def api_scrub_pregenerate():
+    force = str(request.args.get("force", "")).strip().lower() in {"1", "true", "yes", "on"}
+    started = start_scrub_pregeneration(force=force)
+    with scrub_pregen_lock:
+        payload = dict(scrub_pregen_state)
+    payload["started"] = started
+    return jsonify(payload), (202 if started else 200)
+
+
+@app.get("/api/scrub/pregenerate")
+def api_scrub_pregenerate_status():
+    with scrub_pregen_lock:
+        payload = dict(scrub_pregen_state)
+    return jsonify(payload)
+
+
 @app.get("/api/status/<path:rel_path>")
 def api_status(rel_path: str):
     normalized = normalize_rel_path(rel_path)
@@ -957,11 +1508,14 @@ def api_status(rel_path: str):
 
     thumb_ready = thumbnail_cache_path(normalized).exists()
     preview_ready = preview_cache_path(normalized).exists()
+    scrub_ready = scrub_metadata_cache_path(normalized).exists()
 
     if thumb_ready:
         set_generation_status(normalized, "thumbnail", "ready")
     if preview_ready:
         set_generation_status(normalized, "preview", "ready")
+    if scrub_ready:
+        set_generation_status(normalized, "scrub", "ready")
 
     with generation_lock:
         state = generation_status.get(
@@ -969,6 +1523,7 @@ def api_status(rel_path: str):
             {
                 "thumbnail": "ready" if thumb_ready else "missing",
                 "preview": "ready" if preview_ready else "missing",
+                "scrub": "ready" if scrub_ready else "missing",
             },
         )
 
@@ -976,8 +1531,10 @@ def api_status(rel_path: str):
         {
             "thumbnail": thumb_ready,
             "preview": preview_ready,
-            "thumbnailState": state["thumbnail"],
-            "previewState": state["preview"],
+            "scrub": scrub_ready,
+            "thumbnailState": state.get("thumbnail", "missing"),
+            "previewState": state.get("preview", "missing"),
+            "scrubState": state.get("scrub", "missing"),
         }
     )
 
@@ -985,6 +1542,8 @@ def api_status(rel_path: str):
 @atexit.register
 def shutdown_executor() -> None:
     thumbnail_executor.shutdown(wait=False)
+    preview_executor.shutdown(wait=False)
+    scrub_executor.shutdown(wait=False)
 
 
 threading.Thread(target=background_startup_index, daemon=True).start()

@@ -229,6 +229,55 @@
             align-items: center;
         }
 
+        .library-tools {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .search-input,
+        .sort-select,
+        .sort-dir-btn {
+            font: inherit;
+            color: var(--text);
+            border: 1px solid rgba(141, 208, 197, 0.3);
+            background: rgba(9, 19, 22, 0.7);
+            border-radius: 10px;
+            transition: border-color 140ms ease, background 140ms ease;
+        }
+
+        .search-input {
+            min-width: min(340px, 90vw);
+            padding: 8px 10px;
+            outline: none;
+        }
+
+        .search-input::placeholder {
+            color: #9bc4b8;
+        }
+
+        .sort-select {
+            padding: 8px 10px;
+            outline: none;
+        }
+
+        .sort-dir-btn {
+            width: 40px;
+            height: 40px;
+            cursor: pointer;
+            font-size: 1rem;
+            line-height: 1;
+        }
+
+        .search-input:focus,
+        .sort-select:focus,
+        .sort-dir-btn:hover {
+            border-color: rgba(90, 216, 184, 0.8);
+            background: rgba(12, 25, 30, 0.9);
+        }
+
         .crumb {
             border: 0;
             border-radius: 8px;
@@ -287,6 +336,20 @@
             aspect-ratio: 16 / 9;
             background: rgba(8, 15, 18, 0.92);
             overflow: hidden;
+        }
+
+        .duration-pill {
+            position: absolute;
+            left: 10px;
+            bottom: 10px;
+            z-index: 3;
+            font-size: 0.74rem;
+            color: #e9fff9;
+            background: rgba(4, 12, 15, 0.72);
+            border: 1px solid rgba(141, 208, 197, 0.55);
+            border-radius: 999px;
+            padding: 4px 8px;
+            backdrop-filter: blur(3px);
         }
 
         .preview-tap-btn {
@@ -423,6 +486,14 @@
             overflow: auto;
         }
 
+        dialog.video-dialog:not([open]) {
+            display: none;
+        }
+
+        dialog.video-dialog[open] {
+            display: flex;
+        }
+
         dialog.video-dialog::backdrop {
             backdrop-filter: blur(5px);
             background: rgba(3, 6, 8, 0.62);
@@ -514,6 +585,68 @@
             opacity: 1;
         }
 
+        .hold-speed-indicator {
+            position: absolute;
+            left: 50%;
+            top: 12px;
+            transform: translateX(-50%);
+            background: rgba(5, 10, 14, 0.82);
+            border: 1px solid rgba(141, 208, 197, 0.45);
+            border-radius: 999px;
+            padding: 5px 11px;
+            font-size: 0.76rem;
+            letter-spacing: 0.01em;
+            color: #dffbf3;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 120ms ease;
+            z-index: 6;
+        }
+
+        .hold-speed-indicator.visible {
+            opacity: 1;
+        }
+
+        .scrub-preview {
+            position: absolute;
+            bottom: 54px;
+            left: 0;
+            transform: translateX(-50%);
+            width: auto;
+            border-radius: 10px;
+            border: 1px solid rgba(141, 208, 197, 0.58);
+            background: rgba(2, 7, 9, 0.92);
+            box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+            overflow: hidden;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 120ms ease;
+            z-index: 6;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .scrub-preview.visible {
+            opacity: 1;
+        }
+
+        .scrub-preview-image {
+            width: 160px;
+            height: 90px;
+            background-color: #000;
+            background-repeat: no-repeat;
+            background-position: 0 0;
+            background-size: auto;
+        }
+
+        .scrub-preview-time {
+            padding: 4px 8px 6px;
+            font-size: 0.74rem;
+            color: #d9f9f0;
+            text-align: center;
+        }
+
         .plyr--full-ui input[type="range"] {
             color: var(--accent);
         }
@@ -544,6 +677,15 @@
 
             .main {
                 grid-row: 2;
+            }
+
+            .library-tools {
+                gap: 6px;
+            }
+
+            .search-input {
+                min-width: 0;
+                width: 100%;
             }
 
             .app-shell.sidebar-open .sidebar {
@@ -606,6 +748,22 @@
             {% if config_error %}
             <div class="alert">{{ config_error }}</div>
             {% endif %}
+            <div class="library-tools" id="libraryTools">
+                <input
+                    id="searchInput"
+                    class="search-input"
+                    type="search"
+                    placeholder="Search videos or folders"
+                    aria-label="Search videos"
+                />
+                <select id="sortSelect" class="sort-select" aria-label="Sort videos">
+                    <option value="default">Default</option>
+                    <option value="az">A-Z</option>
+                    <option value="dateAdded">Date Added</option>
+                    <option value="length">Length</option>
+                </select>
+                <button id="sortDirBtn" class="sort-dir-btn" type="button" aria-label="Reverse sort direction">↑</button>
+            </div>
             <div class="crumbs" id="breadcrumbs"></div>
             <section class="video-grid" id="videoGrid"></section>
             <div class="empty-state" id="emptyState" hidden>No videos match this folder.</div>
@@ -622,7 +780,12 @@
         </div>
         <div class="player-shell" id="playerShell">
             <video id="dialogPlayer" class="player" controls playsinline preload="metadata"></video>
+            <div class="hold-speed-indicator" id="holdSpeedIndicator" aria-hidden="true">2x speed</div>
             <div class="seek-toast" id="seekToast"></div>
+            <div class="scrub-preview" id="scrubPreview" aria-hidden="true">
+                <div class="scrub-preview-image" id="scrubPreviewImage"></div>
+                <div class="scrub-preview-time" id="scrubPreviewTime">0:00</div>
+            </div>
         </div>
     </dialog>
 
@@ -637,15 +800,28 @@
         const videoGridEl = document.getElementById("videoGrid");
         const emptyStateEl = document.getElementById("emptyState");
         const breadcrumbsEl = document.getElementById("breadcrumbs");
+        const searchInputEl = document.getElementById("searchInput");
+        const sortSelectEl = document.getElementById("sortSelect");
+        const sortDirBtnEl = document.getElementById("sortDirBtn");
         const dialogEl = document.getElementById("videoDialog");
         const dialogTitleEl = document.getElementById("dialogTitle");
         const dialogPlayerEl = document.getElementById("dialogPlayer");
         const playerShellEl = document.getElementById("playerShell");
+        const holdSpeedIndicatorEl = document.getElementById("holdSpeedIndicator");
         const seekToastEl = document.getElementById("seekToast");
+        const scrubPreviewEl = document.getElementById("scrubPreview");
+        const scrubPreviewImageEl = document.getElementById("scrubPreviewImage");
+        const scrubPreviewTimeEl = document.getElementById("scrubPreviewTime");
         const dialogCloseBtn = document.getElementById("dialogClose");
         let plyrPlayer = null;
         let seekToastTimer = null;
         const gestureState = { lastTapAt: 0, lastSide: "", activeTouch: false };
+        const holdSpeedState = {
+            active: false,
+            pointerId: null,
+            previousRate: 1,
+            wasPausedBeforeHold: false,
+        };
 
         const FALLBACK_THUMB =
             "data:image/svg+xml;utf8," +
@@ -662,6 +838,15 @@
             isMobile: window.matchMedia("(max-width: 900px)").matches,
             expandedFolders: new Set([""]),
             thumbnailRetryTimers: new Map(),
+            searchQuery: "",
+            sortKey: "default",
+            sortDirection: 1,
+            libraryPollTimer: null,
+            scrubMetadata: null,
+            scrubVideoPath: "",
+            scrubProgressEl: null,
+            scrubListeners: null,
+            lastLibrarySignature: "",
         };
 
         const THUMBNAIL_MAX_RETRIES = 8;
@@ -742,7 +927,25 @@
             plyrPlayer = new window.Plyr(dialogPlayerEl, {
                 speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
                 controls,
+                clickToPlay: false,
+                fullscreen: {
+                    enabled: true,
+                    fallback: true,
+                    iosNative: false,
+                    container: "#playerShell",
+                },
             });
+
+            const refreshScrubProgressBinding = () => {
+                // Plyr can rebuild control markup during ready/fullscreen transitions.
+                window.requestAnimationFrame(() => {
+                    bindScrubPreviewToProgress();
+                });
+            };
+
+            plyrPlayer.on("ready", refreshScrubProgressBinding);
+            plyrPlayer.on("enterfullscreen", refreshScrubProgressBinding);
+            plyrPlayer.on("exitfullscreen", refreshScrubProgressBinding);
         }
 
         function showSeekToast(text) {
@@ -774,6 +977,135 @@
                     dialogPlayerEl.currentTime = value;
                 },
             };
+        }
+
+        function getCurrentPlaybackRate() {
+            if (plyrPlayer && Number.isFinite(Number(plyrPlayer.speed))) {
+                return Number(plyrPlayer.speed);
+            }
+            return Number(dialogPlayerEl.playbackRate || 1);
+        }
+
+        function setPlaybackRate(rate) {
+            if (plyrPlayer) {
+                plyrPlayer.speed = rate;
+            }
+            dialogPlayerEl.playbackRate = rate;
+        }
+
+        function isPlayerPaused() {
+            if (plyrPlayer) {
+                return Boolean(plyrPlayer.paused);
+            }
+            return Boolean(dialogPlayerEl.paused);
+        }
+
+        function playPlayer() {
+            if (plyrPlayer) {
+                return plyrPlayer.play();
+            }
+            return dialogPlayerEl.play();
+        }
+
+        function pausePlayer() {
+            if (plyrPlayer) {
+                plyrPlayer.pause();
+                return;
+            }
+            dialogPlayerEl.pause();
+        }
+
+        function setHoldSpeedIndicatorVisible(visible) {
+            if (!holdSpeedIndicatorEl) {
+                return;
+            }
+            holdSpeedIndicatorEl.classList.toggle("visible", Boolean(visible));
+        }
+
+        function shouldIgnoreHoldTarget(target) {
+            if (!(target instanceof Element)) {
+                return false;
+            }
+            return Boolean(
+                target.closest(
+                    ".plyr__controls, .plyr__menu, .plyr__control, .plyr__progress, .plyr__volume, .dialog-head, .dialog-tools, .dialog-close"
+                )
+            );
+        }
+
+        function startHoldSpeed(event) {
+            if (event.button !== undefined && event.button !== 0) {
+                return;
+            }
+            if (holdSpeedState.active) {
+                return;
+            }
+            if (shouldIgnoreHoldTarget(event.target)) {
+                return;
+            }
+
+            holdSpeedState.active = true;
+            holdSpeedState.pointerId =
+                event.pointerId !== undefined ? event.pointerId : null;
+            holdSpeedState.previousRate = getCurrentPlaybackRate();
+            holdSpeedState.wasPausedBeforeHold = isPlayerPaused();
+            setPlaybackRate(2);
+            setHoldSpeedIndicatorVisible(true);
+
+            if (holdSpeedState.wasPausedBeforeHold) {
+                const playPromise = playPlayer();
+                if (playPromise && typeof playPromise.catch === "function") {
+                    playPromise.catch(() => {});
+                }
+            }
+
+            if (
+                holdSpeedState.pointerId !== null &&
+                typeof dialogPlayerEl.setPointerCapture === "function"
+            ) {
+                try {
+                    dialogPlayerEl.setPointerCapture(holdSpeedState.pointerId);
+                } catch (_) {
+                    // Ignore if pointer capture is not available for this interaction.
+                }
+            }
+        }
+
+        function stopHoldSpeed(event) {
+            if (!holdSpeedState.active) {
+                return;
+            }
+
+            if (
+                event &&
+                event.pointerId !== undefined &&
+                holdSpeedState.pointerId !== null &&
+                event.pointerId !== holdSpeedState.pointerId
+            ) {
+                return;
+            }
+
+            setPlaybackRate(holdSpeedState.previousRate || 1);
+            setHoldSpeedIndicatorVisible(false);
+
+            if (holdSpeedState.wasPausedBeforeHold) {
+                pausePlayer();
+            }
+
+            if (
+                holdSpeedState.pointerId !== null &&
+                typeof dialogPlayerEl.releasePointerCapture === "function"
+            ) {
+                try {
+                    dialogPlayerEl.releasePointerCapture(holdSpeedState.pointerId);
+                } catch (_) {
+                    // Ignore if pointer capture was already released.
+                }
+            }
+
+            holdSpeedState.active = false;
+            holdSpeedState.pointerId = null;
+            holdSpeedState.wasPausedBeforeHold = false;
         }
 
         function seekActivePlayerBy(seconds) {
@@ -844,6 +1176,48 @@
             { passive: false }
         );
 
+        playerShellEl.addEventListener("pointerdown", startHoldSpeed, true);
+        playerShellEl.addEventListener("pointerup", stopHoldSpeed, true);
+        playerShellEl.addEventListener("pointercancel", stopHoldSpeed, true);
+        playerShellEl.addEventListener("pointerleave", stopHoldSpeed, true);
+        playerShellEl.addEventListener("lostpointercapture", stopHoldSpeed, true);
+        dialogPlayerEl.addEventListener(
+            "click",
+            (event) => {
+                // Prevent direct video-surface click from toggling play/pause.
+                event.preventDefault();
+                event.stopPropagation();
+            },
+            true
+        );
+        playerShellEl.addEventListener(
+            "touchstart",
+            (event) => {
+                if (!event.touches || event.touches.length !== 1 || holdSpeedState.active) {
+                    return;
+                }
+                if (shouldIgnoreHoldTarget(event.target)) {
+                    return;
+                }
+                startHoldSpeed(event);
+            },
+            { passive: true, capture: true }
+        );
+        playerShellEl.addEventListener(
+            "touchend",
+            () => {
+                stopHoldSpeed();
+            },
+            { passive: true, capture: true }
+        );
+        playerShellEl.addEventListener(
+            "touchcancel",
+            () => {
+                stopHoldSpeed();
+            },
+            { passive: true, capture: true }
+        );
+
         async function openVideoDialog(meta) {
             const videoSrc = `/api/video/${encodePath(meta.path)}`;
             const subtitleTracks = buildSubtitleTracks(meta);
@@ -866,9 +1240,13 @@
             }
 
             dialogEl.showModal();
+            bindScrubPreviewToProgress();
+            loadScrubMetadataForVideo(meta.path);
         }
 
         function closeDialog() {
+            stopHoldSpeed();
+            clearScrubPreviewState();
             if (plyrPlayer) {
                 plyrPlayer.stop();
                 plyrPlayer.source = {
@@ -943,6 +1321,185 @@
             return name.replace(/\.[^/.]+$/, "");
         }
 
+        function formatDuration(seconds) {
+            const total = Number(seconds);
+            if (!Number.isFinite(total) || total <= 0) {
+                return "--:--";
+            }
+
+            const wholeSeconds = Math.floor(total);
+            const hours = Math.floor(wholeSeconds / 3600);
+            const minutes = Math.floor((wholeSeconds % 3600) / 60);
+            const secs = wholeSeconds % 60;
+
+            if (hours > 0) {
+                return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+            }
+            return `${minutes}:${String(secs).padStart(2, "0")}`;
+        }
+
+        function getPlayableDuration() {
+            if (
+                plyrPlayer &&
+                Number.isFinite(Number(plyrPlayer.duration)) &&
+                Number(plyrPlayer.duration) > 0
+            ) {
+                return Number(plyrPlayer.duration);
+            }
+            const nativeDuration = Number(dialogPlayerEl.duration || 0);
+            return Number.isFinite(nativeDuration) && nativeDuration > 0 ? nativeDuration : 0;
+        }
+
+        function hideScrubPreview() {
+            scrubPreviewEl.classList.remove("visible");
+        }
+
+        function clearScrubBindings() {
+            if (!state.scrubProgressEl || !state.scrubListeners) {
+                return;
+            }
+            state.scrubProgressEl.removeEventListener("mousemove", state.scrubListeners.mousemove);
+            state.scrubProgressEl.removeEventListener("mouseleave", state.scrubListeners.mouseleave);
+            state.scrubProgressEl.removeEventListener("touchmove", state.scrubListeners.touchmove);
+            state.scrubProgressEl.removeEventListener("touchend", state.scrubListeners.touchend);
+            state.scrubProgressEl = null;
+            state.scrubListeners = null;
+        }
+
+        function setScrubPreviewPosition(clientX) {
+            const shellRect = playerShellEl.getBoundingClientRect();
+            if (!shellRect.width) {
+                return;
+            }
+            const localX = clientX - shellRect.left;
+            scrubPreviewEl.style.left = `${localX}px`;
+        }
+
+        function frameForTime(metadata, seconds) {
+            const frames = Array.isArray(metadata?.frames) ? metadata.frames : [];
+            if (!frames.length) {
+                return null;
+            }
+            const interval = Math.max(1, Number(metadata.intervalSeconds || 10));
+            const idx = Math.max(0, Math.min(frames.length - 1, Math.floor(seconds / interval)));
+            return frames[idx] || null;
+        }
+
+        function spriteUrl(videoPath, sheetIndex) {
+            return `/api/scrub/${encodePath(videoPath)}/sprite/${sheetIndex}.jpg`;
+        }
+
+        function updateScrubPreviewFromClientX(clientX) {
+            const progressEl = state.scrubProgressEl;
+            if (!progressEl || !state.scrubMetadata) {
+                hideScrubPreview();
+                return;
+            }
+
+            const progressRect = progressEl.getBoundingClientRect();
+            if (!progressRect.width) {
+                hideScrubPreview();
+                return;
+            }
+
+            const ratio = Math.max(0, Math.min(1, (clientX - progressRect.left) / progressRect.width));
+            const duration = getPlayableDuration() || Number(state.scrubMetadata.durationSeconds || 0);
+            const timeAtCursor = ratio * Math.max(duration, 0);
+            const frame = frameForTime(state.scrubMetadata, timeAtCursor);
+            if (!frame) {
+                hideScrubPreview();
+                return;
+            }
+
+            const tile = state.scrubMetadata.tile || {};
+            const cellW = Number(frame.w || tile.cellWidth || 160);
+            const cellH = Number(frame.h || tile.cellHeight || 90);
+            const cols = Number(tile.columns || 10);
+            const rows = Number(tile.rows || 10);
+
+            scrubPreviewImageEl.style.backgroundImage = `url('${spriteUrl(state.scrubVideoPath, frame.sheet)}')`;
+            scrubPreviewImageEl.style.width = `${cellW}px`;
+            scrubPreviewImageEl.style.height = `${cellH}px`;
+            scrubPreviewImageEl.style.backgroundPosition = `-${frame.x}px -${frame.y}px`;
+            scrubPreviewImageEl.style.backgroundSize = `${cols * cellW}px ${rows * cellH}px`;
+            scrubPreviewTimeEl.textContent = formatDuration(timeAtCursor);
+            setScrubPreviewPosition(clientX);
+            scrubPreviewEl.classList.add("visible");
+        }
+
+        function bindScrubPreviewToProgress() {
+            clearScrubBindings();
+            const progressEl = playerShellEl.querySelector(".plyr__progress");
+            if (!progressEl) {
+                return;
+            }
+
+            const handlers = {
+                mousemove: (event) => {
+                    updateScrubPreviewFromClientX(event.clientX);
+                },
+                mouseleave: () => {
+                    hideScrubPreview();
+                },
+                touchmove: (event) => {
+                    if (!event.touches || !event.touches.length) {
+                        return;
+                    }
+                    updateScrubPreviewFromClientX(event.touches[0].clientX);
+                },
+                touchend: () => {
+                    hideScrubPreview();
+                },
+            };
+
+            progressEl.addEventListener("mousemove", handlers.mousemove);
+            progressEl.addEventListener("mouseleave", handlers.mouseleave);
+            progressEl.addEventListener("touchmove", handlers.touchmove, { passive: true });
+            progressEl.addEventListener("touchend", handlers.touchend, { passive: true });
+
+            state.scrubProgressEl = progressEl;
+            state.scrubListeners = handlers;
+        }
+
+        async function loadScrubMetadataForVideo(videoPath) {
+            state.scrubVideoPath = videoPath;
+            state.scrubMetadata = null;
+            hideScrubPreview();
+
+            try {
+                const response = await fetch(`/api/scrub/${encodePath(videoPath)}/metadata`, { cache: "no-store" });
+                if (!response.ok) {
+                    return;
+                }
+                const payload = await response.json();
+                if (state.scrubVideoPath !== videoPath) {
+                    return;
+                }
+                state.scrubMetadata = payload;
+                bindScrubPreviewToProgress();
+            } catch (_) {
+                // Ignore scrub preview failures and keep playback functional.
+            }
+        }
+
+        function clearScrubPreviewState() {
+            state.scrubMetadata = null;
+            state.scrubVideoPath = "";
+            hideScrubPreview();
+            clearScrubBindings();
+        }
+
+        async function ensureScrubPregenerationStarted() {
+            try {
+                await fetch("/api/scrub/pregenerate", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                });
+            } catch (_) {
+                // Ignore startup errors; on-demand metadata requests can still generate scrub data.
+            }
+        }
+
         function inCurrentFilter(video) {
             if (!state.folderFilter) {
                 return true;
@@ -951,6 +1508,90 @@
                 video.folder === state.folderFilter ||
                 video.folder.startsWith(state.folderFilter + "/")
             );
+        }
+
+        function matchesSearch(video) {
+            const query = (state.searchQuery || "").trim().toLowerCase();
+            if (!query) {
+                return true;
+            }
+
+            const haystacks = [
+                String(fileTitle(video.name || "")).toLowerCase(),
+                String(video.name || "").toLowerCase(),
+                String(video.folder || "").toLowerCase(),
+                String(video.path || "").toLowerCase(),
+            ];
+
+            return haystacks.some((value) => value.includes(query));
+        }
+
+        function compareVideos(a, b) {
+            if (state.sortKey === "az") {
+                const byName = String(fileTitle(a.name || "")).localeCompare(
+                    String(fileTitle(b.name || "")),
+                    undefined,
+                    { sensitivity: "base", numeric: true }
+                );
+                if (byName !== 0) {
+                    return byName;
+                }
+                return String(a.path || "").localeCompare(String(b.path || ""), undefined, {
+                    sensitivity: "base",
+                    numeric: true,
+                });
+            }
+
+            if (state.sortKey === "dateAdded") {
+                const aTs = Number(a.dateAddedTs || 0);
+                const bTs = Number(b.dateAddedTs || 0);
+                if (aTs !== bTs) {
+                    return aTs - bTs;
+                }
+                return String(a.path || "").localeCompare(String(b.path || ""), undefined, {
+                    sensitivity: "base",
+                    numeric: true,
+                });
+            }
+
+            if (state.sortKey === "length") {
+                const aDuration = Number(a.durationSeconds || 0);
+                const bDuration = Number(b.durationSeconds || 0);
+                if (aDuration !== bDuration) {
+                    return aDuration - bDuration;
+                }
+                return String(a.path || "").localeCompare(String(b.path || ""), undefined, {
+                    sensitivity: "base",
+                    numeric: true,
+                });
+            }
+
+            return 0;
+        }
+
+        function getVisibleVideos() {
+            const scoped = state.videos.filter((video) => inCurrentFilter(video) && matchesSearch(video));
+
+            if (state.sortKey === "default") {
+                if (state.sortDirection < 0) {
+                    scoped.reverse();
+                }
+                return scoped;
+            }
+
+            return scoped.sort((a, b) => compareVideos(a, b) * state.sortDirection);
+        }
+
+        function defaultSortDirection(sortKey) {
+            return sortKey === "dateAdded" || sortKey === "length" ? -1 : 1;
+        }
+
+        function updateSortDirectionButton() {
+            const ascending = state.sortDirection >= 0;
+            sortDirBtnEl.textContent = ascending ? "↑" : "↓";
+            sortDirBtnEl.title = ascending
+                ? "Ascending order (click to reverse)"
+                : "Descending order (click to reverse)";
         }
 
         function buildBreadcrumbs() {
@@ -1193,11 +1834,13 @@
             card.style.animation = `appear 360ms ease ${Math.min(idx * 25, 250)}ms both`;
 
             const thumbSrc = `/api/thumbnail/${encodePath(meta.path)}`;
+            const durationLabel = formatDuration(meta.durationSeconds);
 
             card.innerHTML = `
                 <div class="card-media">
                     <img class="card-thumb" alt="${meta.name}" data-src="${thumbSrc}" loading="lazy" />
                     <video class="card-preview" muted loop playsinline preload="none"></video>
+                    <span class="duration-pill">${durationLabel}</span>
                     <button class="preview-tap-btn" type="button">Preview</button>
                     <div class="preview-loader">Generating preview...</div>
                     <div class="preview-error">Preview failed</div>
@@ -1263,7 +1906,7 @@
             videoGridEl.innerHTML = "";
             state.cards = [];
 
-            const filtered = state.videos.filter(inCurrentFilter);
+            const filtered = getVisibleVideos();
             emptyStateEl.hidden = filtered.length > 0;
 
             if (!filtered.length) {
@@ -1282,8 +1925,56 @@
             buildBreadcrumbs();
         }
 
-        async function loadLibrary() {
-            statusText.textContent = "Loading library...";
+        function buildLibrarySignature(payload) {
+            const files = Array.isArray(payload.files) ? payload.files : [];
+            let hash = 2166136261;
+
+            for (const file of files) {
+                const path = String(file.path || "");
+                for (let i = 0; i < path.length; i += 1) {
+                    hash ^= path.charCodeAt(i);
+                    hash = Math.imul(hash, 16777619);
+                }
+
+                const duration = Number(file.durationSeconds || 0) | 0;
+                const added = Number(file.dateAddedTs || 0) | 0;
+                const subtitlesCount = Array.isArray(file.subtitles) ? file.subtitles.length : 0;
+
+                hash ^= duration;
+                hash = Math.imul(hash, 16777619);
+                hash ^= added;
+                hash = Math.imul(hash, 16777619);
+                hash ^= subtitlesCount;
+                hash = Math.imul(hash, 16777619);
+            }
+
+            const count = Number(payload.count || files.length || 0);
+            const rootName = String(payload.root?.name || "");
+            return `${count}|${rootName}|${hash >>> 0}`;
+        }
+
+        function scheduleLibraryPoll(delayMs = 1200) {
+            if (state.libraryPollTimer) {
+                window.clearTimeout(state.libraryPollTimer);
+            }
+            state.libraryPollTimer = window.setTimeout(() => {
+                loadLibrary({ isPoll: true });
+            }, delayMs);
+        }
+
+        function clearLibraryPoll() {
+            if (state.libraryPollTimer) {
+                window.clearTimeout(state.libraryPollTimer);
+                state.libraryPollTimer = null;
+            }
+        }
+
+        async function loadLibrary(options = {}) {
+            const isPoll = Boolean(options.isPoll);
+            if (!isPoll) {
+                statusText.textContent = "Loading library...";
+            }
+
             try {
                 const response = await fetch("/api/browse", { cache: "no-store" });
                 const payload = await response.json();
@@ -1292,24 +1983,70 @@
                     throw new Error(payload.error || "Failed to load library");
                 }
 
-                state.root = payload.root;
-                state.videos = payload.files || [];
-                statusText.textContent = `${payload.count} videos`; 
+                const signature = buildLibrarySignature(payload);
+                const libraryChanged = signature !== state.lastLibrarySignature;
+
+                if (libraryChanged) {
+                    state.lastLibrarySignature = signature;
+                    state.root = payload.root;
+                    state.videos = payload.files || [];
+                }
+
+                const isIndexing = Boolean(payload.indexing);
+
+                if (isIndexing) {
+                    statusText.textContent = `Indexing... ${payload.count} videos ready`;
+                    scheduleLibraryPoll(payload.count > 0 ? 1600 : 900);
+                } else {
+                    clearLibraryPoll();
+                    statusText.textContent = `${payload.count} videos`;
+                }
 
                 if (!payload.ffmpeg || !payload.ffprobe) {
                     statusText.textContent += " | ffmpeg missing";
                 }
 
-                renderFolders();
-                renderGrid();
+                if (libraryChanged) {
+                    renderFolders();
+                    renderGrid();
+                }
+
+                if (isIndexing && payload.count === 0) {
+                    emptyStateEl.hidden = false;
+                    emptyStateEl.textContent = "Indexing videos...";
+                }
             } catch (error) {
+                clearLibraryPoll();
                 statusText.textContent = "Error loading videos";
                 emptyStateEl.hidden = false;
                 emptyStateEl.textContent = error.message;
             }
         }
 
+        searchInputEl.addEventListener("input", () => {
+            state.searchQuery = searchInputEl.value;
+            renderGrid();
+        });
+
+        sortSelectEl.addEventListener("change", () => {
+            const nextSortKey = sortSelectEl.value;
+            if (state.sortKey !== nextSortKey) {
+                state.sortDirection = defaultSortDirection(nextSortKey);
+            }
+            state.sortKey = nextSortKey;
+            updateSortDirectionButton();
+            renderGrid();
+        });
+
+        sortDirBtnEl.addEventListener("click", () => {
+            state.sortDirection = state.sortDirection >= 0 ? -1 : 1;
+            updateSortDirectionButton();
+            renderGrid();
+        });
+
+        updateSortDirectionButton();
         initProPlayer();
+        ensureScrubPregenerationStarted();
         loadLibrary();
     </script>
 </body>
