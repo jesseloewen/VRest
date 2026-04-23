@@ -86,6 +86,12 @@
             gap: 12px;
         }
 
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
         .toggle-btn {
             border: 1px solid rgba(141, 208, 197, 0.3);
             background: rgba(25, 51, 58, 0.6);
@@ -108,6 +114,14 @@
             color: var(--muted);
             font-size: 0.92rem;
             text-align: right;
+        }
+
+        .generation-toggle-btn {
+            width: auto;
+            min-width: 122px;
+            padding: 0 12px;
+            font-size: 0.86rem;
+            font-weight: 600;
         }
 
         .sidebar {
@@ -237,6 +251,220 @@
             margin-bottom: 12px;
         }
 
+        .generation-panel {
+            position: fixed;
+            right: 0;
+            top: 74px;
+            bottom: 0;
+            width: min(520px, 44vw);
+            border: 1px solid var(--panel-border);
+            border-top: 0;
+            border-right: 0;
+            border-radius: 16px 0 0 0;
+            background: rgba(7, 16, 20, 0.92);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            z-index: 8;
+            transform: translateX(103%);
+            transition: transform 220ms ease;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .app-shell.generation-open .generation-panel {
+            transform: translateX(0);
+        }
+
+        .generation-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-bottom: 1px solid rgba(141, 208, 197, 0.2);
+            background: rgba(5, 12, 15, 0.68);
+        }
+
+        .generation-head-tools {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .generation-close {
+            border: 0;
+            background: rgba(228, 105, 105, 0.9);
+            color: #fff;
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        .generation-head h3 {
+            margin: 0;
+            font-size: 0.95rem;
+            color: #dbf9f1;
+            letter-spacing: 0.01em;
+        }
+
+        .generation-meta {
+            font-size: 0.8rem;
+            color: var(--muted);
+            text-align: right;
+        }
+
+        .generation-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 8px;
+            padding: 10px 12px;
+            border-bottom: 1px solid rgba(141, 208, 197, 0.16);
+        }
+
+        .generation-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 10px 12px;
+            border-bottom: 1px solid rgba(141, 208, 197, 0.16);
+        }
+
+        .generation-action-btn {
+            border: 1px solid rgba(141, 208, 197, 0.36);
+            background: rgba(13, 28, 32, 0.86);
+            color: var(--text);
+            border-radius: 10px;
+            padding: 7px 10px;
+            font: inherit;
+            font-size: 0.76rem;
+            cursor: pointer;
+            transition: border-color 140ms ease, background 140ms ease;
+        }
+
+        .generation-action-btn:hover {
+            border-color: rgba(90, 216, 184, 0.8);
+            background: rgba(14, 33, 37, 0.95);
+        }
+
+        .generation-action-btn:disabled {
+            opacity: 0.65;
+            cursor: not-allowed;
+        }
+
+        .summary-chip {
+            border: 1px solid rgba(141, 208, 197, 0.2);
+            border-radius: 10px;
+            background: rgba(10, 20, 24, 0.72);
+            padding: 8px 9px;
+            font-size: 0.78rem;
+            color: #d9f5ee;
+            line-height: 1.3;
+        }
+
+        .summary-chip strong {
+            display: block;
+            margin-bottom: 3px;
+            font-size: 0.82rem;
+            color: #f1fffb;
+        }
+
+        .generation-table-wrap {
+            overflow-y: auto;
+            overflow-x: hidden;
+            max-height: none;
+            flex: 1;
+        }
+
+        .generation-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.78rem;
+            table-layout: fixed;
+        }
+
+        .generation-table th,
+        .generation-table td {
+            padding: 8px 10px;
+            border-bottom: 1px solid rgba(141, 208, 197, 0.14);
+            text-align: left;
+            vertical-align: middle;
+        }
+
+        .generation-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: rgba(6, 14, 17, 0.96);
+            color: #bfe9dd;
+            font-weight: 600;
+        }
+
+        .generation-path {
+            display: block;
+            width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #e8fff8;
+        }
+
+        .generation-state-col {
+            width: 88px;
+        }
+
+        .gen-badge {
+            display: inline-block;
+            min-width: 66px;
+            text-align: center;
+            padding: 4px 8px;
+            border-radius: 999px;
+            border: 1px solid transparent;
+            font-size: 0.72rem;
+            text-transform: capitalize;
+            letter-spacing: 0.01em;
+        }
+
+        .gen-badge.ready {
+            color: #caf9eb;
+            background: rgba(38, 132, 105, 0.3);
+            border-color: rgba(97, 219, 185, 0.4);
+        }
+
+        .gen-badge.pending {
+            color: #fff2d7;
+            background: rgba(150, 104, 38, 0.34);
+            border-color: rgba(242, 185, 101, 0.48);
+        }
+
+        .gen-badge.failed {
+            color: #ffe0e0;
+            background: rgba(121, 40, 40, 0.4);
+            border-color: rgba(228, 105, 105, 0.52);
+        }
+
+        .gen-badge.missing {
+            color: #d7ece6;
+            background: rgba(56, 84, 91, 0.36);
+            border-color: rgba(146, 190, 182, 0.38);
+        }
+
+        .generation-empty {
+            color: #b8dbd1;
+        }
+
+        .generation-backdrop {
+            position: fixed;
+            inset: 74px 0 0 0;
+            background: rgba(1, 4, 6, 0.52);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 180ms ease;
+            z-index: 7;
+        }
+
         .search-input,
         .sort-select,
         .sort-dir-btn {
@@ -350,28 +578,6 @@
             border-radius: 999px;
             padding: 4px 8px;
             backdrop-filter: blur(3px);
-        }
-
-        .preview-tap-btn {
-            position: absolute;
-            right: 10px;
-            bottom: 10px;
-            z-index: 3;
-            border: 1px solid rgba(141, 208, 197, 0.55);
-            color: #e9fff9;
-            background: rgba(4, 12, 15, 0.72);
-            border-radius: 999px;
-            padding: 6px 10px;
-            font: inherit;
-            font-size: 0.74rem;
-            cursor: pointer;
-            display: none;
-            backdrop-filter: blur(3px);
-        }
-
-        .preview-tap-btn.active {
-            background: rgba(90, 216, 184, 0.3);
-            border-color: rgba(90, 216, 184, 0.9);
         }
 
         .card-thumb,
@@ -692,15 +898,29 @@
                 transform: translateX(0);
             }
 
-            .app-shell.sidebar-open + .sidebar-backdrop {
+            .app-shell.sidebar-open ~ .sidebar-backdrop {
                 opacity: 1;
                 pointer-events: auto;
             }
 
-            .preview-tap-btn {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
+            .topbar-status {
+                max-width: 42vw;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .generation-panel {
+                width: min(95vw, 460px);
+            }
+
+            .app-shell.generation-open .generation-panel {
+                transform: translateX(0);
+            }
+
+            .video-card {
+                -webkit-touch-callout: none;
+                user-select: none;
             }
 
             dialog.video-dialog {
@@ -726,6 +946,28 @@
                 max-height: calc(100dvh - 110px);
                 margin-inline: auto;
             }
+
+            .generation-summary {
+                grid-template-columns: 1fr;
+            }
+
+            .generation-actions {
+                flex-direction: column;
+            }
+
+            .generation-action-btn {
+                width: 100%;
+                text-align: left;
+            }
+
+            .generation-path {
+                max-width: 240px;
+            }
+        }
+
+        .app-shell.generation-open ~ .generation-backdrop {
+            opacity: 1;
+            pointer-events: auto;
         }
     </style>
 </head>
@@ -736,7 +978,19 @@
                 <button id="toggleSidebar" class="toggle-btn" aria-label="Toggle folders">☰</button>
                 <div class="brand">VRest</div>
             </div>
-            <div class="topbar-status" id="statusText">Scanning videos...</div>
+            <div class="topbar-right">
+                <div class="topbar-status" id="statusText">Scanning videos...</div>
+                <button
+                    id="toggleGenerationPanel"
+                    class="toggle-btn generation-toggle-btn"
+                    type="button"
+                    aria-label="Toggle generation jobs panel"
+                    aria-expanded="false"
+                    aria-controls="generationPanel"
+                >
+                    Jobs
+                </button>
+            </div>
         </header>
 
         <aside class="sidebar" id="sidebar">
@@ -761,6 +1015,7 @@
                     <option value="az">A-Z</option>
                     <option value="dateAdded">Date Added</option>
                     <option value="length">Length</option>
+                    <option value="size">File Size</option>
                 </select>
                 <button id="sortDirBtn" class="sort-dir-btn" type="button" aria-label="Reverse sort direction">↑</button>
             </div>
@@ -768,8 +1023,41 @@
             <section class="video-grid" id="videoGrid"></section>
             <div class="empty-state" id="emptyState" hidden>No videos match this folder.</div>
         </main>
+
+        <aside class="generation-panel" id="generationPanel" aria-live="polite" aria-label="Generation jobs panel">
+            <div class="generation-head">
+                <h3>Generation Jobs</h3>
+                <div class="generation-head-tools">
+                    <div class="generation-meta" id="generationMeta">Loading generation status...</div>
+                    <button class="generation-close" id="closeGenerationPanel" type="button" aria-label="Close generation panel">×</button>
+                </div>
+            </div>
+            <div class="generation-actions">
+                <button id="generateAllPreviewsBtn" class="generation-action-btn" type="button">Generate All Previews</button>
+                <button id="generateAllScrubBtn" class="generation-action-btn" type="button">Generate All Scrubbing</button>
+            </div>
+            <div class="generation-summary" id="generationSummary"></div>
+            <div class="generation-table-wrap">
+                <table class="generation-table" aria-label="Thumbnail, preview, and scrub generation status">
+                    <thead>
+                        <tr>
+                            <th class="generation-state-col">Thumbnail</th>
+                            <th class="generation-state-col">Preview</th>
+                            <th class="generation-state-col">Scrub</th>
+                            <th>Title</th>
+                        </tr>
+                    </thead>
+                    <tbody id="generationRows">
+                        <tr>
+                            <td colspan="4" class="generation-empty">Loading generation status...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </aside>
     </div>
     <div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div>
+    <div class="generation-backdrop" id="generationBackdrop" aria-hidden="true"></div>
 
     <dialog class="video-dialog" id="videoDialog">
         <div class="dialog-head">
@@ -794,7 +1082,10 @@
     <script>
         const appShell = document.getElementById("appShell");
         const toggleSidebarBtn = document.getElementById("toggleSidebar");
+        const toggleGenerationPanelBtn = document.getElementById("toggleGenerationPanel");
+        const closeGenerationPanelBtn = document.getElementById("closeGenerationPanel");
         const sidebarBackdrop = document.getElementById("sidebarBackdrop");
+        const generationBackdrop = document.getElementById("generationBackdrop");
         const statusText = document.getElementById("statusText");
         const folderTreeEl = document.getElementById("folderTree");
         const videoGridEl = document.getElementById("videoGrid");
@@ -803,6 +1094,11 @@
         const searchInputEl = document.getElementById("searchInput");
         const sortSelectEl = document.getElementById("sortSelect");
         const sortDirBtnEl = document.getElementById("sortDirBtn");
+        const generationMetaEl = document.getElementById("generationMeta");
+        const generateAllPreviewsBtn = document.getElementById("generateAllPreviewsBtn");
+        const generateAllScrubBtn = document.getElementById("generateAllScrubBtn");
+        const generationSummaryEl = document.getElementById("generationSummary");
+        const generationRowsEl = document.getElementById("generationRows");
         const dialogEl = document.getElementById("videoDialog");
         const dialogTitleEl = document.getElementById("dialogTitle");
         const dialogPlayerEl = document.getElementById("dialogPlayer");
@@ -815,7 +1111,7 @@
         const dialogCloseBtn = document.getElementById("dialogClose");
         let plyrPlayer = null;
         let seekToastTimer = null;
-        const gestureState = { lastTapAt: 0, lastSide: "", activeTouch: false };
+        const gestureState = { lastTapAt: 0, lastSide: "" };
         const holdSpeedState = {
             active: false,
             pointerId: null,
@@ -842,6 +1138,11 @@
             sortKey: "default",
             sortDirection: 1,
             libraryPollTimer: null,
+            generationPollTimer: null,
+            generationItems: [],
+            generationSummary: null,
+            generationRequestInFlight: false,
+            generationActionInFlight: false,
             scrubMetadata: null,
             scrubVideoPath: "",
             scrubProgressEl: null,
@@ -851,6 +1152,8 @@
 
         const THUMBNAIL_MAX_RETRIES = 8;
         const THUMBNAIL_RETRY_BASE_MS = 450;
+        const PREVIEW_HOLD_DELAY_MS = 350;
+        const HOLD_MOVE_CANCEL_PX = 14;
 
         function isTouchLike() {
             return window.matchMedia("(hover: none), (pointer: coarse)").matches;
@@ -863,8 +1166,34 @@
             appShell.classList.remove("sidebar-open");
         }
 
+        function isGenerationPanelOpen() {
+            return appShell.classList.contains("generation-open");
+        }
+
+        function setGenerationPanelOpen(open) {
+            const shouldOpen = Boolean(open);
+            appShell.classList.toggle("generation-open", shouldOpen);
+            toggleGenerationPanelBtn.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+            toggleGenerationPanelBtn.textContent = shouldOpen ? "Close Jobs" : "Jobs";
+        }
+
+        function closeGenerationPanel() {
+            setGenerationPanelOpen(false);
+        }
+
+        function toggleGenerationPanel() {
+            const nextOpen = !isGenerationPanelOpen();
+            if (nextOpen && state.isMobile) {
+                appShell.classList.remove("sidebar-open");
+            }
+            setGenerationPanelOpen(nextOpen);
+        }
+
         function toggleSidebar() {
             if (state.isMobile) {
+                if (isGenerationPanelOpen()) {
+                    closeGenerationPanel();
+                }
                 appShell.classList.toggle("sidebar-open");
             } else {
                 appShell.classList.toggle("sidebar-collapsed");
@@ -872,7 +1201,10 @@
         }
 
         toggleSidebarBtn.addEventListener("click", toggleSidebar);
+        toggleGenerationPanelBtn.addEventListener("click", toggleGenerationPanel);
+        closeGenerationPanelBtn.addEventListener("click", closeGenerationPanel);
         sidebarBackdrop.addEventListener("click", closeSidebarIfMobile);
+        generationBackdrop.addEventListener("click", closeGenerationPanel);
 
         window.addEventListener("resize", () => {
             const wasMobile = state.isMobile;
@@ -883,6 +1215,12 @@
             }
             if (!state.isMobile && wasMobile) {
                 appShell.classList.remove("sidebar-open");
+            }
+        });
+
+        window.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && isGenerationPanelOpen()) {
+                closeGenerationPanel();
             }
         });
 
@@ -1489,14 +1827,40 @@
             clearScrubBindings();
         }
 
-        async function ensureScrubPregenerationStarted() {
+        async function triggerBulkGeneration(kind) {
+            if (state.generationActionInFlight) {
+                return;
+            }
+
+            if (kind !== "preview" && kind !== "scrub") {
+                return;
+            }
+
+            state.generationActionInFlight = true;
+            generateAllPreviewsBtn.disabled = true;
+            generateAllScrubBtn.disabled = true;
+            const label = kind === "preview" ? "preview" : "scrub";
             try {
-                await fetch("/api/scrub/pregenerate", {
+                const response = await fetch(`/api/${kind}/pregenerate`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                 });
+                const payload = await response.json();
+                if (!response.ok) {
+                    throw new Error(payload.error || `Failed to start ${label} generation`);
+                }
+
+                const started = Boolean(payload.started);
+                generationMetaEl.textContent = started
+                    ? `Started bulk ${label} generation...`
+                    : `Bulk ${label} generation is already running.`;
+                loadGenerationStatuses();
             } catch (_) {
-                // Ignore startup errors; on-demand metadata requests can still generate scrub data.
+                generationMetaEl.textContent = `Could not start bulk ${label} generation.`;
+            } finally {
+                state.generationActionInFlight = false;
+                generateAllPreviewsBtn.disabled = false;
+                generateAllScrubBtn.disabled = false;
             }
         }
 
@@ -1566,6 +1930,18 @@
                 });
             }
 
+            if (state.sortKey === "size") {
+                const aSize = Number(a.fileSizeBytes || 0);
+                const bSize = Number(b.fileSizeBytes || 0);
+                if (aSize !== bSize) {
+                    return aSize - bSize;
+                }
+                return String(a.path || "").localeCompare(String(b.path || ""), undefined, {
+                    sensitivity: "base",
+                    numeric: true,
+                });
+            }
+
             return 0;
         }
 
@@ -1583,7 +1959,7 @@
         }
 
         function defaultSortDirection(sortKey) {
-            return sortKey === "dateAdded" || sortKey === "length" ? -1 : 1;
+            return sortKey === "dateAdded" || sortKey === "length" || sortKey === "size" ? -1 : 1;
         }
 
         function updateSortDirectionButton() {
@@ -1731,15 +2107,10 @@
 
         function clearPreview(card) {
             const preview = card.querySelector("video.card-preview");
-            const previewTapBtn = card.querySelector("button.preview-tap-btn");
             card.classList.remove("previewing", "preview-loading", "preview-error");
             preview.pause();
             preview.removeAttribute("src");
             preview.load();
-            if (previewTapBtn) {
-                previewTapBtn.classList.remove("active");
-                previewTapBtn.textContent = "Preview";
-            }
         }
 
         function clearThumbnailRetry(card) {
@@ -1841,7 +2212,6 @@
                     <img class="card-thumb" alt="${meta.name}" data-src="${thumbSrc}" loading="lazy" />
                     <video class="card-preview" muted loop playsinline preload="none"></video>
                     <span class="duration-pill">${durationLabel}</span>
-                    <button class="preview-tap-btn" type="button">Preview</button>
                     <div class="preview-loader">Generating preview...</div>
                     <div class="preview-error">Preview failed</div>
                 </div>
@@ -1852,7 +2222,6 @@
             `;
 
             const img = card.querySelector("img.card-thumb");
-            const previewTapBtn = card.querySelector("button.preview-tap-btn");
             img.dataset.thumbSrc = thumbSrc;
             img.dataset.thumbAttempt = "0";
             img.addEventListener("load", () => {
@@ -1878,23 +2247,87 @@
                 });
             }
 
-            previewTapBtn.addEventListener("click", (event) => {
-                event.stopPropagation();
-                const isActive = card.dataset.previewActive === "true";
-                if (isActive) {
+            if (isTouchLike()) {
+                let holdTimer = null;
+                let holdPointerId = null;
+                let holdStartX = 0;
+                let holdStartY = 0;
+                let holdActivated = false;
+
+                const clearHoldTimer = () => {
+                    if (holdTimer) {
+                        window.clearTimeout(holdTimer);
+                        holdTimer = null;
+                    }
+                };
+
+                const stopHeldPreview = () => {
                     card.dataset.previewActive = "false";
                     card.dataset.previewToken = "";
                     clearPreview(card);
+                };
+
+                const beginHold = (event) => {
+                    if (event.pointerType === "mouse") {
+                        return;
+                    }
+                    clearHoldTimer();
+                    holdActivated = false;
+                    holdPointerId = event.pointerId ?? null;
+                    holdStartX = Number(event.clientX || 0);
+                    holdStartY = Number(event.clientY || 0);
+                    holdTimer = window.setTimeout(() => {
+                        holdActivated = true;
+                        clearAllPreviews(card);
+                        activatePreview(card, meta);
+                    }, PREVIEW_HOLD_DELAY_MS);
+                };
+
+                const moveHold = (event) => {
+                    if (holdPointerId !== null && event.pointerId !== holdPointerId) {
+                        return;
+                    }
+                    const dx = Math.abs(Number(event.clientX || 0) - holdStartX);
+                    const dy = Math.abs(Number(event.clientY || 0) - holdStartY);
+                    if (dx > HOLD_MOVE_CANCEL_PX || dy > HOLD_MOVE_CANCEL_PX) {
+                        clearHoldTimer();
+                    }
+                };
+
+                const endHold = (event) => {
+                    if (
+                        event &&
+                        holdPointerId !== null &&
+                        event.pointerId !== undefined &&
+                        event.pointerId !== holdPointerId
+                    ) {
+                        return;
+                    }
+                    clearHoldTimer();
+                    if (holdActivated) {
+                        card.dataset.suppressNextClick = "true";
+                    }
+                    holdPointerId = null;
+                };
+
+                card.addEventListener("pointerdown", beginHold, { passive: true });
+                card.addEventListener("pointermove", moveHold, { passive: true });
+                card.addEventListener("pointerup", endHold, { passive: true });
+                card.addEventListener("pointercancel", endHold, { passive: true });
+                card.addEventListener("pointerleave", endHold, { passive: true });
+                card.addEventListener("contextmenu", (event) => {
+                    event.preventDefault();
+                });
+            }
+
+            card.addEventListener("click", (event) => {
+                if (card.dataset.suppressNextClick === "true") {
+                    card.dataset.suppressNextClick = "false";
+                    event.preventDefault();
+                    event.stopPropagation();
                     return;
                 }
-
-                clearAllPreviews(card);
-                activatePreview(card, meta);
-                previewTapBtn.classList.add("active");
-                previewTapBtn.textContent = "Stop";
-            });
-
-            card.addEventListener("click", () => {
+                clearAllPreviews();
                 openVideoDialog(meta);
             });
 
@@ -1938,11 +2371,14 @@
 
                 const duration = Number(file.durationSeconds || 0) | 0;
                 const added = Number(file.dateAddedTs || 0) | 0;
+                const size = Number(file.fileSizeBytes || 0) | 0;
                 const subtitlesCount = Array.isArray(file.subtitles) ? file.subtitles.length : 0;
 
                 hash ^= duration;
                 hash = Math.imul(hash, 16777619);
                 hash ^= added;
+                hash = Math.imul(hash, 16777619);
+                hash ^= size;
                 hash = Math.imul(hash, 16777619);
                 hash ^= subtitlesCount;
                 hash = Math.imul(hash, 16777619);
@@ -1951,6 +2387,195 @@
             const count = Number(payload.count || files.length || 0);
             const rootName = String(payload.root?.name || "");
             return `${count}|${rootName}|${hash >>> 0}`;
+        }
+
+        function normalizeGenerationState(value) {
+            const stateValue = String(value || "").toLowerCase();
+            if (["ready", "pending", "failed", "missing"].includes(stateValue)) {
+                return stateValue;
+            }
+            return "missing";
+        }
+
+        function hasPendingGeneration(item) {
+            return [item.thumbnailState, item.previewState, item.scrubState]
+                .map((value) => normalizeGenerationState(value))
+                .includes("pending");
+        }
+
+        function hasFailedGeneration(item) {
+            return [item.thumbnailState, item.previewState, item.scrubState]
+                .map((value) => normalizeGenerationState(value))
+                .includes("failed");
+        }
+
+        function summaryChip(label, stats) {
+            const chip = document.createElement("div");
+            chip.className = "summary-chip";
+
+            const title = document.createElement("strong");
+            title.textContent = label;
+            chip.appendChild(title);
+
+            const text = document.createElement("span");
+            const ready = Number(stats?.ready || 0);
+            const pending = Number(stats?.pending || 0);
+            const failed = Number(stats?.failed || 0);
+            const missing = Number(stats?.missing || 0);
+            text.textContent = `${ready} ready, ${pending} pending, ${failed} failed, ${missing} missing`;
+            chip.appendChild(text);
+
+            return chip;
+        }
+
+        function generationBadge(stateValue) {
+            const normalized = normalizeGenerationState(stateValue);
+            const badge = document.createElement("span");
+            badge.className = `gen-badge ${normalized}`;
+            badge.textContent = normalized;
+            return badge;
+        }
+
+        function processPathLabel(item) {
+            const name = String(item.name || "").trim();
+            if (name) {
+                return name;
+            }
+            const rawPath = String(item.path || "").trim();
+            if (!rawPath) {
+                return "Unknown";
+            }
+            const parts = rawPath.split("/");
+            return parts[parts.length - 1] || rawPath;
+        }
+
+        function renderGenerationPanel() {
+            const items = Array.isArray(state.generationItems) ? [...state.generationItems] : [];
+            const summary = state.generationSummary || {};
+
+            generationSummaryEl.innerHTML = "";
+            generationSummaryEl.appendChild(summaryChip("Thumbnails", summary.thumbnail));
+            generationSummaryEl.appendChild(summaryChip("Previews", summary.preview));
+            generationSummaryEl.appendChild(summaryChip("Scrubbing", summary.scrub));
+
+            generationRowsEl.innerHTML = "";
+
+            if (!items.length) {
+                const row = document.createElement("tr");
+                const cell = document.createElement("td");
+                cell.colSpan = 4;
+                cell.className = "generation-empty";
+                cell.textContent = "No videos indexed yet.";
+                row.appendChild(cell);
+                generationRowsEl.appendChild(row);
+                return;
+            }
+
+            const stateRank = { pending: 0, failed: 1, missing: 2, ready: 3 };
+            items.sort((a, b) => {
+                const aRank = Math.min(
+                    stateRank[normalizeGenerationState(a.thumbnailState)],
+                    stateRank[normalizeGenerationState(a.previewState)],
+                    stateRank[normalizeGenerationState(a.scrubState)]
+                );
+                const bRank = Math.min(
+                    stateRank[normalizeGenerationState(b.thumbnailState)],
+                    stateRank[normalizeGenerationState(b.previewState)],
+                    stateRank[normalizeGenerationState(b.scrubState)]
+                );
+                if (aRank !== bRank) {
+                    return aRank - bRank;
+                }
+                return processPathLabel(a).localeCompare(processPathLabel(b), undefined, {
+                    sensitivity: "base",
+                    numeric: true,
+                });
+            });
+
+            const fragment = document.createDocumentFragment();
+            for (const item of items) {
+                const row = document.createElement("tr");
+
+                const thumbnailCell = document.createElement("td");
+                thumbnailCell.appendChild(generationBadge(item.thumbnailState));
+                row.appendChild(thumbnailCell);
+
+                const previewCell = document.createElement("td");
+                previewCell.appendChild(generationBadge(item.previewState));
+                row.appendChild(previewCell);
+
+                const scrubCell = document.createElement("td");
+                scrubCell.appendChild(generationBadge(item.scrubState));
+                row.appendChild(scrubCell);
+
+                const pathCell = document.createElement("td");
+                pathCell.className = "generation-path";
+                pathCell.textContent = processPathLabel(item);
+                pathCell.title = String(item.path || processPathLabel(item));
+                row.appendChild(pathCell);
+
+                fragment.appendChild(row);
+            }
+
+            generationRowsEl.appendChild(fragment);
+        }
+
+        function scheduleGenerationPoll(delayMs = 1800) {
+            if (state.generationPollTimer) {
+                window.clearTimeout(state.generationPollTimer);
+            }
+            state.generationPollTimer = window.setTimeout(() => {
+                loadGenerationStatuses({ isPoll: true });
+            }, delayMs);
+        }
+
+        function clearGenerationPoll() {
+            if (state.generationPollTimer) {
+                window.clearTimeout(state.generationPollTimer);
+                state.generationPollTimer = null;
+            }
+        }
+
+        async function loadGenerationStatuses(options = {}) {
+            if (state.generationRequestInFlight) {
+                return;
+            }
+
+            state.generationRequestInFlight = true;
+            try {
+                const response = await fetch("/api/status/all", { cache: "no-store" });
+                const payload = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(payload.error || "Failed to load generation status");
+                }
+
+                state.generationItems = Array.isArray(payload.items) ? payload.items : [];
+                state.generationSummary = payload.summary || {};
+                renderGenerationPanel();
+
+                const pendingCount = state.generationItems.filter((item) => hasPendingGeneration(item)).length;
+                const failedCount = state.generationItems.filter((item) => hasFailedGeneration(item)).length;
+                const totalCount = Number(payload.count || state.generationItems.length || 0);
+                const previewJobRunning = Boolean(payload.jobs?.preview?.running);
+                const scrubJobRunning = Boolean(payload.jobs?.scrub?.running);
+
+                generationMetaEl.textContent = `${totalCount} videos tracked | ${pendingCount} active | ${failedCount} failed`;
+                generateAllPreviewsBtn.disabled = previewJobRunning || state.generationActionInFlight;
+                generateAllScrubBtn.disabled = scrubJobRunning || state.generationActionInFlight;
+                generateAllPreviewsBtn.textContent = previewJobRunning ? "Generating All Previews..." : "Generate All Previews";
+                generateAllScrubBtn.textContent = scrubJobRunning ? "Generating All Scrubbing..." : "Generate All Scrubbing";
+
+                const pollDelay = payload.indexing || pendingCount > 0 ? 1800 : 6000;
+                scheduleGenerationPoll(pollDelay);
+            } catch (error) {
+                generationMetaEl.textContent = `Generation status unavailable: ${error.message}`;
+                generateAllPreviewsBtn.disabled = state.generationActionInFlight;
+                generateAllScrubBtn.disabled = state.generationActionInFlight;
+                scheduleGenerationPoll(5000);
+            } finally {
+                state.generationRequestInFlight = false;
+            }
         }
 
         function scheduleLibraryPoll(delayMs = 1200) {
@@ -2011,6 +2636,8 @@
                     renderGrid();
                 }
 
+                loadGenerationStatuses({ isPoll });
+
                 if (isIndexing && payload.count === 0) {
                     emptyStateEl.hidden = false;
                     emptyStateEl.textContent = "Indexing videos...";
@@ -2044,10 +2671,18 @@
             renderGrid();
         });
 
+        generateAllPreviewsBtn.addEventListener("click", () => {
+            triggerBulkGeneration("preview");
+        });
+
+        generateAllScrubBtn.addEventListener("click", () => {
+            triggerBulkGeneration("scrub");
+        });
+
         updateSortDirectionButton();
         initProPlayer();
-        ensureScrubPregenerationStarted();
         loadLibrary();
+        loadGenerationStatuses();
     </script>
 </body>
 </html>

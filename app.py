@@ -37,7 +37,19 @@ VIDEO_FOLDER = os.getenv("VIDEO_FOLDER", "").strip()
 DATA_FOLDER = os.getenv("DATA_FOLDER", "./data").strip() or "./data"
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "3232"))
+USE_GPU = os.getenv("USE_GPU", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 APP_PASSWORD = os.getenv("APP_PASSWORD", "")
+APP_PASSWORD_ENABLED = os.getenv("APP_PASSWORD_ENABLED", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 APP_SECRET_KEY = os.getenv("APP_SECRET_KEY", "").strip()
 APP_SESSION_COOKIE_NAME = os.getenv("APP_SESSION_COOKIE_NAME", "").strip()
 
@@ -96,20 +108,74 @@ def ffmpeg_supports_token(command: List[str], token: str) -> bool:
     return token.lower() in text_blob
 
 
-NVIDIA_CUDA_AVAILABLE = ffmpeg_supports_token(["ffmpeg", "-hide_banner", "-hwaccels"], "cuda")
-NVIDIA_NVENC_AVAILABLE = ffmpeg_supports_token(
+DETECTED_NVIDIA_CUDA = ffmpeg_supports_token(["ffmpeg", "-hide_banner", "-hwaccels"], "cuda")
+DETECTED_NVIDIA_NVENC = ffmpeg_supports_token(
     ["ffmpeg", "-hide_banner", "-encoders"], "h264_nvenc"
 )
+DETECTED_NVIDIA_SCALE_CUDA = ffmpeg_supports_token(
+    ["ffmpeg", "-hide_banner", "-filters"], "scale_cuda"
+)
+
+NVIDIA_CUDA_AVAILABLE = USE_GPU and DETECTED_NVIDIA_CUDA
+NVIDIA_NVENC_AVAILABLE = USE_GPU and DETECTED_NVIDIA_NVENC
+NVIDIA_SCALE_CUDA_AVAILABLE = USE_GPU and DETECTED_NVIDIA_SCALE_CUDA
+
+if not USE_GPU:
+    LOGGER.warning("USE_GPU is disabled; forcing CPU-only media generation.")
 
 if NVIDIA_CUDA_AVAILABLE:
     LOGGER.info("NVIDIA CUDA decode available for ffmpeg.")
 else:
     LOGGER.warning("NVIDIA CUDA decode unavailable; using CPU fallback for some jobs.")
 
+if NVIDIA_CUDA_AVAILABLE and NVIDIA_SCALE_CUDA_AVAILABLE:
+    LOGGER.info("NVIDIA scale_cuda available for scrub generation.")
+elif NVIDIA_CUDA_AVAILABLE:
+    LOGGER.warning("NVIDIA scale_cuda unavailable; scrub generation will use CPU scaling.")
+
 if NVIDIA_NVENC_AVAILABLE:
     LOGGER.info("NVIDIA NVENC encode available for preview generation.")
 else:
     LOGGER.warning("NVIDIA NVENC unavailable; using libx264 fallback for preview generation.")
+
+CPU_CORES = max(1, os.cpu_count() or 1)
+
+def _env_int(name: str, default: int, min_value: int = 1) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(min_value, value)
+
+
+THUMBNAIL_MAX_WORKERS = _env_int("THUMBNAIL_MAX_WORKERS", min(32, CPU_CORES * 2))
+PREVIEW_MAX_WORKERS = _env_int(
+    "PREVIEW_MAX_WORKERS",
+    min(16, max(2, CPU_CORES)) if NVIDIA_NVENC_AVAILABLE else min(8, max(1, CPU_CORES // 2)),
+)
+SCRUB_MAX_WORKERS = _env_int(
+    "SCRUB_MAX_WORKERS",
+    min(8, max(2, CPU_CORES // 2)) if NVIDIA_SCALE_CUDA_AVAILABLE else min(4, max(1, CPU_CORES // 2)),
+)
+
+THUMBNAIL_JPEG_Q = _env_int("THUMBNAIL_JPEG_Q", 6)
+SCRUB_JPEG_Q = _env_int("SCRUB_JPEG_Q", 8)
+PREVIEW_NVENC_CQ = _env_int("PREVIEW_NVENC_CQ", 34)
+PREVIEW_LIBX264_CRF = _env_int("PREVIEW_LIBX264_CRF", 32)
+PREVIEW_NVENC_PRESET = os.getenv("PREVIEW_NVENC_PRESET", "p1").strip() or "p1"
+PREVIEW_LIBX264_PRESET = os.getenv("PREVIEW_LIBX264_PRESET", "ultrafast").strip() or "ultrafast"
+FFMPEG_CPU_THREADS = os.getenv("FFMPEG_CPU_THREADS", "0").strip() or "0"
+
+LOGGER.info(
+    "Generation workers configured: thumbnails=%d previews=%d scrubbing=%d (cpu_cores=%d)",
+    THUMBNAIL_MAX_WORKERS,
+    PREVIEW_MAX_WORKERS,
+    SCRUB_MAX_WORKERS,
+    CPU_CORES,
+)
 
 app = Flask(__name__)
 
@@ -127,7 +193,6 @@ app.config["SESSION_COOKIE_NAME"] = session_cookie_name
 catalog_lock = threading.Lock()
 catalog_tree: Dict = {"name": "Videos", "path": "", "folders": [], "files": []}
 catalog_files: List[Dict] = []
-video_index: Dict[str, Path] = {}
 subtitle_index: Dict[str, Dict[str, Dict[str, str]]] = {}
 catalog_state_lock = threading.Lock()
 catalog_refresh_in_progress = False
@@ -137,9 +202,9 @@ CATALOG_REFRESH_MIN_INTERVAL_SECONDS = 12
 
 generation_lock = threading.Lock()
 generation_status: Dict[str, Dict[str, str]] = {}
-thumbnail_executor = ThreadPoolExecutor(max_workers=4)
-preview_executor = ThreadPoolExecutor(max_workers=2)
-scrub_executor = ThreadPoolExecutor(max_workers=2)
+thumbnail_executor = ThreadPoolExecutor(max_workers=THUMBNAIL_MAX_WORKERS)
+preview_executor = ThreadPoolExecutor(max_workers=PREVIEW_MAX_WORKERS)
+scrub_executor = ThreadPoolExecutor(max_workers=SCRUB_MAX_WORKERS)
 
 SCRUB_INTERVAL_SECONDS = 10
 SCRUB_TILE_COLUMNS = 10
@@ -157,9 +222,19 @@ scrub_pregen_state: Dict[str, object] = {
     "finishedAt": None,
 }
 
+preview_pregen_lock = threading.Lock()
+preview_pregen_state: Dict[str, object] = {
+    "running": False,
+    "total": 0,
+    "done": 0,
+    "failed": 0,
+    "startedAt": None,
+    "finishedAt": None,
+}
+
 
 def auth_enabled() -> bool:
-    return bool(APP_PASSWORD)
+    return APP_PASSWORD_ENABLED and bool(APP_PASSWORD)
 
 
 def is_authenticated() -> bool:
@@ -228,6 +303,16 @@ def ffmpeg_hwaccel_input_args() -> List[str]:
     if not NVIDIA_CUDA_AVAILABLE:
         return []
     return ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
+
+
+def ffmpeg_cpu_threads_args() -> List[str]:
+    return ["-threads", FFMPEG_CPU_THREADS]
+
+
+def preview_scale_filter() -> str:
+    if NVIDIA_CUDA_AVAILABLE and NVIDIA_NVENC_AVAILABLE and NVIDIA_SCALE_CUDA_AVAILABLE:
+        return "scale_cuda=480:-2"
+    return "scale=480:-2"
 
 
 def run_ffmpeg_with_optional_fallback(
@@ -634,13 +719,14 @@ def generate_thumbnail(video_path: Path, out_path: Path) -> bool:
         "-y",
         "-ss",
         f"{seek:.3f}",
+        *ffmpeg_cpu_threads_args(),
         *ffmpeg_hwaccel_input_args(),
         "-i",
         str(video_path),
         "-vframes",
         "1",
         "-q:v",
-        "2",
+        str(THUMBNAIL_JPEG_Q),
         str(out_path),
     ]
 
@@ -649,12 +735,13 @@ def generate_thumbnail(video_path: Path, out_path: Path) -> bool:
         "-y",
         "-ss",
         f"{seek:.3f}",
+        *ffmpeg_cpu_threads_args(),
         "-i",
         str(video_path),
         "-vframes",
         "1",
         "-q:v",
-        "2",
+        str(THUMBNAIL_JPEG_Q),
         str(out_path),
     ]
 
@@ -674,19 +761,20 @@ def generate_preview(video_path: Path, out_path: Path) -> bool:
             "-y",
             "-ss",
             "0",
+            *ffmpeg_cpu_threads_args(),
             *ffmpeg_hwaccel_input_args(),
             "-i",
             str(video_path),
             "-t",
             "12",
             "-vf",
-            "scale=480:-2",
+            preview_scale_filter(),
             "-c:v",
             "h264_nvenc" if NVIDIA_NVENC_AVAILABLE else "libx264",
             "-preset",
-            "p4" if NVIDIA_NVENC_AVAILABLE else "ultrafast",
+            PREVIEW_NVENC_PRESET if NVIDIA_NVENC_AVAILABLE else PREVIEW_LIBX264_PRESET,
             "-cq" if NVIDIA_NVENC_AVAILABLE else "-crf",
-            "30" if NVIDIA_NVENC_AVAILABLE else "28",
+            str(PREVIEW_NVENC_CQ) if NVIDIA_NVENC_AVAILABLE else str(PREVIEW_LIBX264_CRF),
             "-an",
             "-movflags",
             "+faststart",
@@ -698,6 +786,7 @@ def generate_preview(video_path: Path, out_path: Path) -> bool:
             "-y",
             "-ss",
             "0",
+            *ffmpeg_cpu_threads_args(),
             "-i",
             str(video_path),
             "-t",
@@ -707,9 +796,9 @@ def generate_preview(video_path: Path, out_path: Path) -> bool:
             "-c:v",
             "libx264",
             "-crf",
-            "28",
+            str(PREVIEW_LIBX264_CRF),
             "-preset",
-            "ultrafast",
+            PREVIEW_LIBX264_PRESET,
             "-an",
             "-movflags",
             "+faststart",
@@ -747,19 +836,20 @@ def generate_preview(video_path: Path, out_path: Path) -> bool:
                 "-y",
                 "-ss",
                 f"{max(start, 0.0):.3f}",
+                *ffmpeg_cpu_threads_args(),
                 *ffmpeg_hwaccel_input_args(),
                 "-i",
                 str(video_path),
                 "-t",
                 f"{segment_duration:.3f}",
                 "-vf",
-                "scale=480:-2",
+                preview_scale_filter(),
                 "-c:v",
                 "h264_nvenc" if NVIDIA_NVENC_AVAILABLE else "libx264",
                 "-cq" if NVIDIA_NVENC_AVAILABLE else "-crf",
-                "30" if NVIDIA_NVENC_AVAILABLE else "28",
+                str(PREVIEW_NVENC_CQ) if NVIDIA_NVENC_AVAILABLE else str(PREVIEW_LIBX264_CRF),
                 "-preset",
-                "p4" if NVIDIA_NVENC_AVAILABLE else "ultrafast",
+                PREVIEW_NVENC_PRESET if NVIDIA_NVENC_AVAILABLE else PREVIEW_LIBX264_PRESET,
                 "-an",
                 "-movflags",
                 "+faststart",
@@ -771,6 +861,7 @@ def generate_preview(video_path: Path, out_path: Path) -> bool:
                 "-y",
                 "-ss",
                 f"{max(start, 0.0):.3f}",
+                *ffmpeg_cpu_threads_args(),
                 "-i",
                 str(video_path),
                 "-t",
@@ -780,9 +871,9 @@ def generate_preview(video_path: Path, out_path: Path) -> bool:
                 "-c:v",
                 "libx264",
                 "-crf",
-                "28",
+                str(PREVIEW_LIBX264_CRF),
                 "-preset",
-                "ultrafast",
+                PREVIEW_LIBX264_PRESET,
                 "-an",
                 "-movflags",
                 "+faststart",
@@ -913,23 +1004,36 @@ def generate_scrub_sprites(video_path: Path, rel_path: str, force: bool = False)
     remove_scrub_sprite_files(sprite_dir)
 
     sheet_pattern = sprite_dir / "sheet_%04d.jpg"
-    filter_graph = (
+    cpu_filter_graph = (
         f"fps=1/{SCRUB_INTERVAL_SECONDS},"
         f"scale={SCRUB_CELL_WIDTH}:{SCRUB_CELL_HEIGHT}:force_original_aspect_ratio=decrease,"
         f"pad={SCRUB_CELL_WIDTH}:{SCRUB_CELL_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,"
         f"tile={SCRUB_TILE_COLUMNS}x{SCRUB_TILE_ROWS}"
     )
 
+    gpu_filter_graph = (
+        f"fps=1/{SCRUB_INTERVAL_SECONDS},"
+        f"scale_cuda={SCRUB_CELL_WIDTH}:{SCRUB_CELL_HEIGHT}:force_original_aspect_ratio=decrease,"
+        "hwdownload,"
+        "format=nv12,"
+        f"pad={SCRUB_CELL_WIDTH}:{SCRUB_CELL_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,"
+        f"tile={SCRUB_TILE_COLUMNS}x{SCRUB_TILE_ROWS}"
+    )
+
+    use_gpu_scrub_pipeline = NVIDIA_CUDA_AVAILABLE and NVIDIA_SCALE_CUDA_AVAILABLE
+    primary_filter_graph = gpu_filter_graph if use_gpu_scrub_pipeline else cpu_filter_graph
+
     primary_cmd = [
         "ffmpeg",
         "-y",
-        *ffmpeg_hwaccel_input_args(),
+        *ffmpeg_cpu_threads_args(),
+        *(ffmpeg_hwaccel_input_args() if use_gpu_scrub_pipeline else []),
         "-i",
         str(video_path),
         "-vf",
-        filter_graph,
+        primary_filter_graph,
         "-q:v",
-        "4",
+        str(SCRUB_JPEG_Q),
         "-start_number",
         "0",
         str(sheet_pattern),
@@ -938,12 +1042,13 @@ def generate_scrub_sprites(video_path: Path, rel_path: str, force: bool = False)
     fallback_cmd = [
         "ffmpeg",
         "-y",
+        *ffmpeg_cpu_threads_args(),
         "-i",
         str(video_path),
         "-vf",
-        filter_graph,
+        cpu_filter_graph,
         "-q:v",
-        "4",
+        str(SCRUB_JPEG_Q),
         "-start_number",
         "0",
         str(sheet_pattern),
@@ -1034,12 +1139,11 @@ def sort_tree(node: Dict) -> None:
         sort_tree(child)
 
 
-def scan_video_library() -> Tuple[Dict, List[Dict], Dict[str, Path], Dict[str, Dict[str, Dict[str, str]]]]:
+def scan_video_library() -> Tuple[Dict, List[Dict], Dict[str, Dict[str, Dict[str, str]]]]:
     if VIDEO_ROOT is None:
-        return {"name": "Videos", "path": "", "folders": [], "files": []}, [], {}, {}
+        return {"name": "Videos", "path": "", "folders": [], "files": []}, [], {}
 
     files: List[Dict] = []
-    index: Dict[str, Path] = {}
     subs_index: Dict[str, Dict[str, Dict[str, str]]] = {}
 
     for path in sorted(VIDEO_ROOT.rglob("*")):
@@ -1058,10 +1162,12 @@ def scan_video_library() -> Tuple[Dict, List[Dict], Dict[str, Path], Dict[str, D
         }
         try:
             stats = path.stat()
+            metadata["fileSizeBytes"] = int(getattr(stats, "st_size", 0) or 0)
             added_ts = int(getattr(stats, "st_ctime", 0) or 0)
             if added_ts <= 0:
                 added_ts = int(getattr(stats, "st_mtime", 0) or 0)
         except OSError:
+            metadata["fileSizeBytes"] = 0
             added_ts = None
 
         metadata["dateAddedTs"] = added_ts
@@ -1072,7 +1178,6 @@ def scan_video_library() -> Tuple[Dict, List[Dict], Dict[str, Path], Dict[str, D
         metadata["subtitles"] = subtitle_tracks
 
         files.append(metadata)
-        index[rel] = path
         if subtitle_sources:
             subs_index[rel] = subtitle_sources
 
@@ -1095,14 +1200,13 @@ def scan_video_library() -> Tuple[Dict, List[Dict], Dict[str, Path], Dict[str, D
 
     sort_tree(root)
     files.sort(key=lambda x: x["path"].lower())
-    return root, files, index, subs_index
+    return root, files, subs_index
 
 
 def thumbnail_worker(rel_path: str) -> None:
     out_path = thumbnail_cache_path(rel_path)
     if out_path.exists():
         set_generation_status(rel_path, "thumbnail", "ready")
-        queue_preview_generation(rel_path)
         return
 
     video_path = resolve_video_path(rel_path)
@@ -1112,8 +1216,6 @@ def thumbnail_worker(rel_path: str) -> None:
 
     ok = generate_thumbnail(video_path, out_path)
     set_generation_status(rel_path, "thumbnail", "ready" if ok else "failed")
-    if ok:
-        queue_preview_generation(rel_path)
 
 
 def queue_thumbnail_generation(rel_path: str) -> None:
@@ -1121,7 +1223,6 @@ def queue_thumbnail_generation(rel_path: str) -> None:
     out_path = thumbnail_cache_path(rel_path)
     if out_path.exists():
         set_generation_status(rel_path, "thumbnail", "ready")
-        queue_preview_generation(rel_path)
         return
 
     with generation_lock:
@@ -1248,18 +1349,59 @@ def start_scrub_pregeneration(force: bool = False) -> bool:
     return True
 
 
+def preview_pregenerate_worker(force: bool = False) -> None:
+    try:
+        with catalog_lock:
+            targets = [item["path"] for item in catalog_files]
+
+        with preview_pregen_lock:
+            preview_pregen_state.update(
+                {
+                    "running": True,
+                    "total": len(targets),
+                    "done": 0,
+                    "failed": 0,
+                    "startedAt": datetime.now(timezone.utc).isoformat(),
+                    "finishedAt": None,
+                }
+            )
+
+        for rel_path in targets:
+            normalized = normalize_rel_path(rel_path)
+            if not force and preview_cache_path(normalized).exists():
+                set_generation_status(normalized, "preview", "ready")
+                ok = True
+            else:
+                ok = generate_preview_sync(normalized)
+
+            with preview_pregen_lock:
+                preview_pregen_state["done"] = int(preview_pregen_state.get("done", 0)) + 1
+                if not ok:
+                    preview_pregen_state["failed"] = int(preview_pregen_state.get("failed", 0)) + 1
+    finally:
+        with preview_pregen_lock:
+            preview_pregen_state["running"] = False
+            preview_pregen_state["finishedAt"] = datetime.now(timezone.utc).isoformat()
+
+
+def start_preview_pregeneration(force: bool = False) -> bool:
+    with preview_pregen_lock:
+        if bool(preview_pregen_state.get("running")):
+            return False
+    preview_executor.submit(preview_pregenerate_worker, force)
+    return True
+
+
 def refresh_catalog() -> None:
-    root, files, index, subs = scan_video_library()
+    root, files, subs = scan_video_library()
     with catalog_lock:
-        global catalog_tree, catalog_files, video_index, subtitle_index
+        global catalog_tree, catalog_files, subtitle_index
         catalog_tree = root
         catalog_files = files
-        video_index = index
         subtitle_index = subs
 
     for file_meta in files:
         queue_thumbnail_generation(file_meta["path"])
-        queue_scrub_generation(file_meta["path"])
 
 
 def catalog_refresh_worker() -> None:
@@ -1500,12 +1642,24 @@ def api_scrub_pregenerate_status():
     return jsonify(payload)
 
 
-@app.get("/api/status/<path:rel_path>")
-def api_status(rel_path: str):
-    normalized = normalize_rel_path(rel_path)
-    if resolve_video_path(normalized) is None:
-        abort(404)
+@app.post("/api/preview/pregenerate")
+def api_preview_pregenerate():
+    force = str(request.args.get("force", "")).strip().lower() in {"1", "true", "yes", "on"}
+    started = start_preview_pregeneration(force=force)
+    with preview_pregen_lock:
+        payload = dict(preview_pregen_state)
+    payload["started"] = started
+    return jsonify(payload), (202 if started else 200)
 
+
+@app.get("/api/preview/pregenerate")
+def api_preview_pregenerate_status():
+    with preview_pregen_lock:
+        payload = dict(preview_pregen_state)
+    return jsonify(payload)
+
+
+def generation_snapshot_for_path(normalized: str) -> Dict[str, object]:
     thumb_ready = thumbnail_cache_path(normalized).exists()
     preview_ready = preview_cache_path(normalized).exists()
     scrub_ready = scrub_metadata_cache_path(normalized).exists()
@@ -1527,16 +1681,91 @@ def api_status(rel_path: str):
             },
         )
 
+    return {
+        "thumbnail": thumb_ready,
+        "preview": preview_ready,
+        "scrub": scrub_ready,
+        "thumbnailState": state.get("thumbnail", "missing"),
+        "previewState": state.get("preview", "missing"),
+        "scrubState": state.get("scrub", "missing"),
+    }
+
+
+@app.get("/api/status/all")
+def api_status_all():
+    if CONFIG_ERROR:
+        return jsonify({"items": [], "summary": {}, "count": 0}), 400
+
+    schedule_catalog_refresh()
+
+    with catalog_state_lock:
+        indexing = catalog_refresh_in_progress
+
+    with scrub_pregen_lock:
+        scrub_job = dict(scrub_pregen_state)
+
+    with preview_pregen_lock:
+        preview_job = dict(preview_pregen_state)
+
+    with catalog_lock:
+        catalog_snapshot = [
+            {
+                "path": item.get("path", ""),
+                "name": item.get("name", ""),
+                "folder": item.get("folder", ""),
+            }
+            for item in catalog_files
+        ]
+
+    summary = {
+        "thumbnail": {"ready": 0, "pending": 0, "failed": 0, "missing": 0},
+        "preview": {"ready": 0, "pending": 0, "failed": 0, "missing": 0},
+        "scrub": {"ready": 0, "pending": 0, "failed": 0, "missing": 0},
+    }
+
+    def safe_bucket(value: str) -> str:
+        return value if value in {"ready", "pending", "failed", "missing"} else "missing"
+
+    items: List[Dict[str, object]] = []
+    for entry in catalog_snapshot:
+        rel_path = normalize_rel_path(str(entry.get("path") or ""))
+        if not rel_path:
+            continue
+        snapshot = generation_snapshot_for_path(rel_path)
+        items.append(
+            {
+                "path": rel_path,
+                "name": entry.get("name", ""),
+                "folder": entry.get("folder", ""),
+                **snapshot,
+            }
+        )
+
+        summary["thumbnail"][safe_bucket(str(snapshot.get("thumbnailState", "missing")))] += 1
+        summary["preview"][safe_bucket(str(snapshot.get("previewState", "missing")))] += 1
+        summary["scrub"][safe_bucket(str(snapshot.get("scrubState", "missing")))] += 1
+
     return jsonify(
         {
-            "thumbnail": thumb_ready,
-            "preview": preview_ready,
-            "scrub": scrub_ready,
-            "thumbnailState": state.get("thumbnail", "missing"),
-            "previewState": state.get("preview", "missing"),
-            "scrubState": state.get("scrub", "missing"),
+            "items": items,
+            "summary": summary,
+            "count": len(items),
+            "indexing": indexing,
+            "jobs": {
+                "preview": preview_job,
+                "scrub": scrub_job,
+            },
         }
     )
+
+
+@app.get("/api/status/<path:rel_path>")
+def api_status(rel_path: str):
+    normalized = normalize_rel_path(rel_path)
+    if resolve_video_path(normalized) is None:
+        abort(404)
+
+    return jsonify(generation_snapshot_for_path(normalized))
 
 
 @atexit.register
