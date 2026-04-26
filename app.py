@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 from typing import Dict, List, Optional, Tuple
@@ -151,6 +151,9 @@ def _env_int(name: str, default: int, min_value: int = 1) -> int:
     return max(min_value, value)
 
 
+APP_SESSION_REMEMBER_DAYS = _env_int("APP_SESSION_REMEMBER_DAYS", 365)
+
+
 THUMBNAIL_MAX_WORKERS = _env_int("THUMBNAIL_MAX_WORKERS", min(32, CPU_CORES * 2))
 PREVIEW_MAX_WORKERS = _env_int(
     "PREVIEW_MAX_WORKERS",
@@ -189,6 +192,8 @@ session_cookie_name = APP_SESSION_COOKIE_NAME or default_session_cookie_name
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_NAME"] = session_cookie_name
+app.config["SESSION_PERMANENT"] = True
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=APP_SESSION_REMEMBER_DAYS)
 
 catalog_lock = threading.Lock()
 catalog_tree: Dict = {"name": "Videos", "path": "", "folders": [], "files": []}
@@ -1474,12 +1479,16 @@ def login_page():
         return redirect(url_for("index_page"))
 
     if bool(session.get("authenticated")):
+        if not session.permanent:
+            session.permanent = True
+            session.modified = True
         return redirect(url_for("index_page"))
 
     error: Optional[str] = None
     if request.method == "POST":
         submitted_password = request.form.get("password", "")
         if hmac.compare_digest(submitted_password, APP_PASSWORD):
+            session.permanent = True
             session["authenticated"] = True
             requested_next = request.args.get("next", "")
             if requested_next.startswith("/") and not requested_next.startswith("//"):

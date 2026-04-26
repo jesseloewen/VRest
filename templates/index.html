@@ -41,6 +41,7 @@
             min-height: 100vh;
             font-family: "Space Grotesk", sans-serif;
             color: var(--text);
+            overflow-x: hidden;
             background:
                 radial-gradient(circle at 15% 10%, rgba(90, 216, 184, 0.22), transparent 40%),
                 radial-gradient(circle at 85% 15%, rgba(242, 185, 101, 0.16), transparent 35%),
@@ -84,12 +85,16 @@
             display: flex;
             align-items: center;
             gap: 12px;
+            min-width: 0;
         }
 
         .topbar-right {
             display: flex;
             align-items: center;
             gap: 10px;
+            min-width: 0;
+            flex: 1 1 auto;
+            justify-content: flex-end;
         }
 
         .toggle-btn {
@@ -114,6 +119,8 @@
             color: var(--muted);
             font-size: 0.92rem;
             text-align: right;
+            min-width: 0;
+            flex: 1 1 auto;
         }
 
         .generation-toggle-btn {
@@ -122,6 +129,7 @@
             padding: 0 12px;
             font-size: 0.86rem;
             font-weight: 600;
+            flex: 0 0 auto;
         }
 
         .sidebar {
@@ -711,17 +719,24 @@
             justify-content: space-between;
             margin-bottom: 10px;
             gap: 12px;
+            min-width: 0;
         }
 
         .dialog-head h3 {
             margin: 0;
             font-size: 1.05rem;
+            flex: 1 1 auto;
+            min-width: 0;
+            line-height: 1.25;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
 
         .dialog-tools {
             display: flex;
             align-items: center;
             gap: 8px;
+            flex: 0 0 auto;
         }
 
         .dialog-close {
@@ -868,6 +883,28 @@
                 grid-template-rows: 74px minmax(0, 1fr);
             }
 
+            .topbar {
+                padding: 0 10px;
+            }
+
+            .topbar-left {
+                gap: 8px;
+            }
+
+            .topbar-right {
+                gap: 6px;
+            }
+
+            .brand {
+                font-size: 1.55rem;
+            }
+
+            .generation-toggle-btn {
+                min-width: 0;
+                padding: 0 9px;
+                font-size: 0.76rem;
+            }
+
             .sidebar {
                 position: fixed;
                 left: 0;
@@ -904,10 +941,11 @@
             }
 
             .topbar-status {
-                max-width: 42vw;
+                max-width: clamp(72px, 30vw, 150px);
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
+                font-size: 0.78rem;
             }
 
             .generation-panel {

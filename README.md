@@ -61,6 +61,7 @@ APP_PASSWORD_ENABLED=true
 APP_PASSWORD=change-me
 APP_SECRET_KEY=replace-with-a-long-random-secret
 APP_SESSION_COOKIE_NAME=vrest_session_custom
+APP_SESSION_REMEMBER_DAYS=365
 ```
 
 4. Hardware/performance settings (optional):
@@ -83,6 +84,7 @@ Notes:
 - Authentication is enabled by default when APP_PASSWORD_ENABLED is true and APP_PASSWORD is set.
 - Set APP_PASSWORD_ENABLED=false to disable password auth entirely.
 - If APP_PASSWORD is empty, authentication is effectively disabled.
+- APP_SESSION_REMEMBER_DAYS controls how long login is remembered across browser restarts.
 - Set USE_GPU=false to force CPU-only generation even if NVIDIA hardware is detected.
 - If APP_SECRET_KEY is omitted, a temporary key is generated for the current process.
 - FFMPEG_CPU_THREADS=0 lets ffmpeg auto-select thread usage.
