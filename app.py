@@ -1550,6 +1550,32 @@ def api_browse():
         )
 
 
+@app.post("/api/reindex")
+def api_reindex():
+    if CONFIG_ERROR:
+        return jsonify({"error": CONFIG_ERROR}), 400
+
+    started = schedule_catalog_refresh(force=True)
+
+    with catalog_state_lock:
+        indexing = catalog_refresh_in_progress
+        has_scanned = catalog_has_completed_scan
+        last_scan_ts = catalog_last_scan_ts
+
+    with catalog_lock:
+        count = len(catalog_files)
+
+    return jsonify(
+        {
+            "started": started,
+            "indexing": indexing,
+            "hasScanned": has_scanned,
+            "lastScanTs": last_scan_ts,
+            "count": count,
+        }
+    ), (202 if started else 200)
+
+
 @app.get("/api/thumbnail/<path:rel_path>")
 def api_thumbnail(rel_path: str):
     normalized = normalize_rel_path(rel_path)

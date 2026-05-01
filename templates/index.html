@@ -507,6 +507,15 @@
             line-height: 1;
         }
 
+        .randomize-btn {
+            width: auto;
+            min-width: 108px;
+            padding: 0 12px;
+            font-size: 0.84rem;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+        }
+
         .search-input:focus,
         .sort-select:focus,
         .sort-dir-btn:hover {
@@ -1054,8 +1063,11 @@
                     <option value="dateAdded">Date Added</option>
                     <option value="length">Length</option>
                     <option value="size">File Size</option>
+                    <option value="random">Random</option>
                 </select>
+                <button id="reindexBtn" class="sort-dir-btn randomize-btn" type="button" title="Start indexing again">Re-Index</button>
                 <button id="sortDirBtn" class="sort-dir-btn" type="button" aria-label="Reverse sort direction">↑</button>
+                <button id="rerandomizeBtn" class="sort-dir-btn randomize-btn" type="button" title="Re-randomize video order" hidden>Shuffle</button>
             </div>
             <div class="crumbs" id="breadcrumbs"></div>
             <section class="video-grid" id="videoGrid"></section>
@@ -1073,6 +1085,7 @@
             <div class="generation-actions">
                 <button id="generateAllPreviewsBtn" class="generation-action-btn" type="button">Generate All Previews</button>
                 <button id="generateAllScrubBtn" class="generation-action-btn" type="button">Generate All Scrubbing</button>
+                <button id="reloadGenerationStatusBtn" class="generation-action-btn" type="button">Reload Job Status</button>
             </div>
             <div class="generation-summary" id="generationSummary"></div>
             <div class="generation-table-wrap">
@@ -1131,10 +1144,13 @@
         const breadcrumbsEl = document.getElementById("breadcrumbs");
         const searchInputEl = document.getElementById("searchInput");
         const sortSelectEl = document.getElementById("sortSelect");
+        const reindexBtnEl = document.getElementById("reindexBtn");
         const sortDirBtnEl = document.getElementById("sortDirBtn");
+        const rerandomizeBtnEl = document.getElementById("rerandomizeBtn");
         const generationMetaEl = document.getElementById("generationMeta");
         const generateAllPreviewsBtn = document.getElementById("generateAllPreviewsBtn");
         const generateAllScrubBtn = document.getElementById("generateAllScrubBtn");
+        const reloadGenerationStatusBtn = document.getElementById("reloadGenerationStatusBtn");
         const generationSummaryEl = document.getElementById("generationSummary");
         const generationRowsEl = document.getElementById("generationRows");
         const dialogEl = document.getElementById("videoDialog");
@@ -1175,12 +1191,14 @@
             searchQuery: "",
             sortKey: "default",
             sortDirection: 1,
+            randomSortTokens: new Map(),
             libraryPollTimer: null,
             generationPollTimer: null,
             generationItems: [],
             generationSummary: null,
             generationRequestInFlight: false,
             generationActionInFlight: false,
+            reindexRequestInFlight: false,
             scrubMetadata: null,
             scrubVideoPath: "",
             scrubProgressEl: null,
@@ -1192,6 +1210,7 @@
         const THUMBNAIL_RETRY_BASE_MS = 450;
         const PREVIEW_HOLD_DELAY_MS = 350;
         const HOLD_MOVE_CANCEL_PX = 14;
+        const PLAYBACK_SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3];
 
         function isTouchLike() {
             return window.matchMedia("(hover: none), (pointer: coarse)").matches;
@@ -1281,6 +1300,7 @@
                     "progress",
                     "mute",
                     "captions",
+                    "settings",
                     "fullscreen",
                 ]
                 : [
@@ -1301,7 +1321,7 @@
                 ];
 
             plyrPlayer = new window.Plyr(dialogPlayerEl, {
-                speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+                speed: { selected: 1, options: PLAYBACK_SPEED_OPTIONS },
                 controls,
                 clickToPlay: false,
                 fullscreen: {
@@ -1363,10 +1383,15 @@
         }
 
         function setPlaybackRate(rate) {
+            const parsedRate = Number(rate);
+            const normalizedRate = Number.isFinite(parsedRate)
+                ? Math.max(0.25, Math.min(3, parsedRate))
+                : 1;
+
             if (plyrPlayer) {
-                plyrPlayer.speed = rate;
+                plyrPlayer.speed = normalizedRate;
             }
-            dialogPlayerEl.playbackRate = rate;
+            dialogPlayerEl.playbackRate = normalizedRate;
         }
 
         function isPlayerPaused() {
@@ -1902,6 +1927,44 @@
             }
         }
 
+        async function triggerReindex() {
+            if (state.reindexRequestInFlight) {
+                return;
+            }
+
+            state.reindexRequestInFlight = true;
+            reindexBtnEl.disabled = true;
+            reindexBtnEl.textContent = "Starting...";
+
+            try {
+                const response = await fetch("/api/reindex", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                });
+                const payload = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(payload.error || "Failed to start indexing");
+                }
+
+                if (payload.started) {
+                    statusText.textContent = "Indexing started...";
+                } else if (payload.indexing) {
+                    statusText.textContent = "Indexing already running...";
+                } else {
+                    statusText.textContent = "Indexing request queued";
+                }
+
+                loadLibrary();
+            } catch (error) {
+                statusText.textContent = `Could not start indexing: ${error.message}`;
+            } finally {
+                state.reindexRequestInFlight = false;
+                reindexBtnEl.disabled = false;
+                reindexBtnEl.textContent = "Re-Index";
+            }
+        }
+
         function inCurrentFilter(video) {
             if (!state.folderFilter) {
                 return true;
@@ -1926,6 +1989,32 @@
             ];
 
             return haystacks.some((value) => value.includes(query));
+        }
+
+        function videoSortIdentity(video) {
+            return String(video.path || `${video.folder || ""}/${video.name || ""}`);
+        }
+
+        function ensureRandomSortTokens() {
+            const liveKeys = new Set();
+            state.videos.forEach((video) => {
+                const key = videoSortIdentity(video);
+                liveKeys.add(key);
+                if (!state.randomSortTokens.has(key)) {
+                    state.randomSortTokens.set(key, Math.random());
+                }
+            });
+
+            Array.from(state.randomSortTokens.keys()).forEach((key) => {
+                if (!liveKeys.has(key)) {
+                    state.randomSortTokens.delete(key);
+                }
+            });
+        }
+
+        function rerandomizeVideos() {
+            state.randomSortTokens.clear();
+            ensureRandomSortTokens();
         }
 
         function compareVideos(a, b) {
@@ -1980,6 +2069,21 @@
                 });
             }
 
+            if (state.sortKey === "random") {
+                ensureRandomSortTokens();
+                const aKey = videoSortIdentity(a);
+                const bKey = videoSortIdentity(b);
+                const aRank = Number(state.randomSortTokens.get(aKey) || 0);
+                const bRank = Number(state.randomSortTokens.get(bKey) || 0);
+                if (aRank !== bRank) {
+                    return aRank - bRank;
+                }
+                return String(a.path || "").localeCompare(String(b.path || ""), undefined, {
+                    sensitivity: "base",
+                    numeric: true,
+                });
+            }
+
             return 0;
         }
 
@@ -1993,6 +2097,10 @@
                 return scoped;
             }
 
+            if (state.sortKey === "random") {
+                return scoped.sort((a, b) => compareVideos(a, b));
+            }
+
             return scoped.sort((a, b) => compareVideos(a, b) * state.sortDirection);
         }
 
@@ -2001,6 +2109,19 @@
         }
 
         function updateSortDirectionButton() {
+            const isRandom = state.sortKey === "random";
+            sortDirBtnEl.hidden = isRandom;
+            sortDirBtnEl.disabled = isRandom;
+            sortDirBtnEl.setAttribute("aria-hidden", isRandom ? "true" : "false");
+            rerandomizeBtnEl.hidden = !isRandom;
+            rerandomizeBtnEl.disabled = !isRandom;
+            rerandomizeBtnEl.setAttribute("aria-hidden", isRandom ? "false" : "true");
+
+            if (isRandom) {
+                rerandomizeBtnEl.title = "Re-randomize video order";
+                return;
+            }
+
             const ascending = state.sortDirection >= 0;
             sortDirBtnEl.textContent = ascending ? "↑" : "↓";
             sortDirBtnEl.title = ascending
@@ -2696,7 +2817,11 @@
         sortSelectEl.addEventListener("change", () => {
             const nextSortKey = sortSelectEl.value;
             if (state.sortKey !== nextSortKey) {
-                state.sortDirection = defaultSortDirection(nextSortKey);
+                if (nextSortKey === "random") {
+                    rerandomizeVideos();
+                } else {
+                    state.sortDirection = defaultSortDirection(nextSortKey);
+                }
             }
             state.sortKey = nextSortKey;
             updateSortDirectionButton();
@@ -2709,12 +2834,30 @@
             renderGrid();
         });
 
+        rerandomizeBtnEl.addEventListener("click", () => {
+            if (state.sortKey !== "random") {
+                return;
+            }
+            rerandomizeVideos();
+            renderGrid();
+        });
+
+        reindexBtnEl.addEventListener("click", () => {
+            triggerReindex();
+        });
+
         generateAllPreviewsBtn.addEventListener("click", () => {
             triggerBulkGeneration("preview");
         });
 
         generateAllScrubBtn.addEventListener("click", () => {
             triggerBulkGeneration("scrub");
+        });
+
+        reloadGenerationStatusBtn.addEventListener("click", () => {
+            generationMetaEl.textContent = "Reloading generation status...";
+            clearGenerationPoll();
+            loadGenerationStatuses();
         });
 
         updateSortDirectionButton();
