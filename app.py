@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import secrets
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -32,6 +33,18 @@ ALLOWED_EXTENSIONS = {
     ".flv",
     ".m4v",
 }
+
+VIDEO_EXTENSION_PATTERN = "|".join(
+    sorted(
+        (re.escape(ext.lstrip(".")) for ext in ALLOWED_EXTENSIONS),
+        key=len,
+        reverse=True,
+    )
+)
+SUBTITLE_CACHE_VIDEO_RE = re.compile(
+    rf"^(?P<video>.+\.(?:{VIDEO_EXTENSION_PATTERN}))(?:\..+)?$",
+    re.IGNORECASE,
+)
 
 VIDEO_FOLDER = os.getenv("VIDEO_FOLDER", "").strip()
 DATA_FOLDER = os.getenv("DATA_FOLDER", "./data").strip() or "./data"
@@ -66,14 +79,12 @@ else:
         VIDEO_ROOT = video_candidate.resolve()
 
 DATA_ROOT = Path(DATA_FOLDER).expanduser().resolve()
-THUMBNAIL_ROOT = DATA_ROOT / "thumbnails"
-PREVIEW_ROOT = DATA_ROOT / "previews"
-SUBTITLE_ROOT = DATA_ROOT / "subtitles"
-SCRUB_ROOT = DATA_ROOT / "scrubbing"
-THUMBNAIL_ROOT.mkdir(parents=True, exist_ok=True)
-PREVIEW_ROOT.mkdir(parents=True, exist_ok=True)
-SUBTITLE_ROOT.mkdir(parents=True, exist_ok=True)
-SCRUB_ROOT.mkdir(parents=True, exist_ok=True)
+DATA_ROOT.mkdir(parents=True, exist_ok=True)
+
+LEGACY_THUMBNAIL_ROOT = DATA_ROOT / "thumbnails"
+LEGACY_PREVIEW_ROOT = DATA_ROOT / "previews"
+LEGACY_SUBTITLE_ROOT = DATA_ROOT / "subtitles"
+LEGACY_SCRUB_ROOT = DATA_ROOT / "scrubbing"
 
 FFMPEG_AVAILABLE = subprocess.call(
     ["where" if os.name == "nt" else "which", "ffmpeg"],
@@ -170,6 +181,7 @@ PREVIEW_NVENC_CQ = _env_int("PREVIEW_NVENC_CQ", 34)
 PREVIEW_LIBX264_CRF = _env_int("PREVIEW_LIBX264_CRF", 32)
 PREVIEW_NVENC_PRESET = os.getenv("PREVIEW_NVENC_PRESET", "p1").strip() or "p1"
 PREVIEW_LIBX264_PRESET = os.getenv("PREVIEW_LIBX264_PRESET", "ultrafast").strip() or "ultrafast"
+PREVIEW_START_OFFSET_SECONDS = _env_int("PREVIEW_START_OFFSET_SECONDS", 1, min_value=0)
 FFMPEG_CPU_THREADS = os.getenv("FFMPEG_CPU_THREADS", "0").strip() or "0"
 
 LOGGER.info(
@@ -268,40 +280,44 @@ def resolve_video_path(rel_path: str) -> Optional[Path]:
     return candidate
 
 
-def thumbnail_cache_path(rel_path: str) -> Path:
+def video_cache_root(rel_path: str) -> Path:
     safe_rel = normalize_rel_path(rel_path)
-    target = THUMBNAIL_ROOT / f"{safe_rel}.jpg"
-    target.parent.mkdir(parents=True, exist_ok=True)
+    target = DATA_ROOT / safe_rel
+    target.mkdir(parents=True, exist_ok=True)
     return target
 
 
+def thumbnail_cache_path(rel_path: str) -> Path:
+    return video_cache_root(rel_path) / "thumbnail.jpg"
+
+
 def preview_cache_path(rel_path: str) -> Path:
-    safe_rel = normalize_rel_path(rel_path)
-    target = PREVIEW_ROOT / f"{safe_rel}.mp4"
-    target.parent.mkdir(parents=True, exist_ok=True)
+    return video_cache_root(rel_path) / "preview.mp4"
+
+
+def scrub_cache_root(rel_path: str) -> Path:
+    target = video_cache_root(rel_path) / "scrubbing"
+    target.mkdir(parents=True, exist_ok=True)
     return target
 
 
 def scrub_metadata_cache_path(rel_path: str) -> Path:
-    safe_rel = normalize_rel_path(rel_path)
-    target = SCRUB_ROOT / f"{safe_rel}.json"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    return target
+    return scrub_cache_root(rel_path) / "metadata.json"
 
 
 def scrub_sprite_dir(rel_path: str) -> Path:
-    safe_rel = normalize_rel_path(rel_path)
-    target = SCRUB_ROOT / f"{safe_rel}.sprites"
+    return scrub_cache_root(rel_path)
+
+
+def subtitle_cache_root(rel_path: str) -> Path:
+    target = video_cache_root(rel_path) / "subtitles"
     target.mkdir(parents=True, exist_ok=True)
     return target
 
 
 def subtitle_cache_path(rel_path: str, track_id: str) -> Path:
-    safe_rel = normalize_rel_path(rel_path)
     safe_track = re.sub(r"[^a-zA-Z0-9._-]", "_", track_id)
-    target = SUBTITLE_ROOT / f"{safe_rel}.{safe_track}.vtt"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    return target
+    return subtitle_cache_root(rel_path) / f"{safe_track}.vtt"
 
 
 def ffmpeg_hwaccel_input_args() -> List[str]:
@@ -318,6 +334,238 @@ def preview_scale_filter() -> str:
     if NVIDIA_CUDA_AVAILABLE and NVIDIA_NVENC_AVAILABLE and NVIDIA_SCALE_CUDA_AVAILABLE:
         return "scale_cuda=480:-2"
     return "scale=480:-2"
+
+
+def _cached_video_rel_path(cache_root: Path, cache_path: Path, suffix: str) -> Optional[str]:
+    rel = normalize_rel_path(cache_path.relative_to(cache_root).as_posix())
+    if not rel.lower().endswith(suffix.lower()):
+        return None
+    return normalize_rel_path(rel[: -len(suffix)])
+
+
+def _subtitle_cached_video_rel_path(cache_root: Path, cache_path: Path) -> Optional[str]:
+    rel = normalize_rel_path(cache_path.relative_to(cache_root).as_posix())
+    if not rel.lower().endswith(".vtt"):
+        return None
+    stem = rel[:-4]
+    match = SUBTITLE_CACHE_VIDEO_RE.match(stem)
+    if not match:
+        return None
+    return normalize_rel_path(match.group("video"))
+
+
+def _new_layout_video_rel_path(
+    cache_path: Path,
+    expected_name: Optional[str] = None,
+    expected_parent: Optional[str] = None,
+) -> Optional[str]:
+    try:
+        rel = cache_path.relative_to(DATA_ROOT)
+    except ValueError:
+        return None
+
+    rel_parts = rel.parts
+    if not rel_parts:
+        return None
+
+    if expected_name and rel_parts[-1].lower() != expected_name.lower():
+        return None
+
+    if expected_parent:
+        if len(rel_parts) < 2 or rel_parts[-2].lower() != expected_parent.lower():
+            return None
+        video_parts = rel_parts[:-2]
+    else:
+        video_parts = rel_parts[:-1]
+
+    if not video_parts:
+        return None
+
+    return normalize_rel_path(PurePosixPath(*video_parts).as_posix())
+
+
+def _prune_empty_dirs(root: Path) -> int:
+    removed = 0
+    directories = sorted(
+        (path for path in root.rglob("*") if path.is_dir()),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    )
+    for directory in directories:
+        try:
+            next(directory.iterdir())
+        except StopIteration:
+            try:
+                directory.rmdir()
+                removed += 1
+            except OSError:
+                continue
+        except OSError:
+            continue
+    return removed
+
+
+def cleanup_orphaned_data_files() -> Dict[str, int]:
+    if VIDEO_ROOT is None:
+        return {
+            "videosTracked": 0,
+            "filesDeleted": 0,
+            "directoriesDeleted": 0,
+            "thumbnailsDeleted": 0,
+            "previewsDeleted": 0,
+            "subtitlesDeleted": 0,
+            "scrubMetadataDeleted": 0,
+            "scrubSpritesDeleted": 0,
+            "generationStatusRemoved": 0,
+            "subtitleIndexRemoved": 0,
+        }
+
+    valid_videos = {
+        normalize_rel_path(path.relative_to(VIDEO_ROOT).as_posix()).lower()
+        for path in VIDEO_ROOT.rglob("*")
+        if is_video_file(path)
+    }
+
+    result = {
+        "videosTracked": len(valid_videos),
+        "filesDeleted": 0,
+        "directoriesDeleted": 0,
+        "thumbnailsDeleted": 0,
+        "previewsDeleted": 0,
+        "subtitlesDeleted": 0,
+        "scrubMetadataDeleted": 0,
+        "scrubSpritesDeleted": 0,
+        "generationStatusRemoved": 0,
+        "subtitleIndexRemoved": 0,
+    }
+
+    def delete_file(path: Path, counter_key: str) -> None:
+        try:
+            path.unlink()
+        except OSError:
+            return
+        result[counter_key] += 1
+        result["filesDeleted"] += 1
+
+    for thumb_path in DATA_ROOT.rglob("thumbnail.jpg"):
+        if not thumb_path.is_file():
+            continue
+        rel_video = _new_layout_video_rel_path(thumb_path, expected_name="thumbnail.jpg")
+        if rel_video and rel_video.lower() not in valid_videos:
+            delete_file(thumb_path, "thumbnailsDeleted")
+
+    for preview_path in DATA_ROOT.rglob("preview.mp4"):
+        if not preview_path.is_file():
+            continue
+        rel_video = _new_layout_video_rel_path(preview_path, expected_name="preview.mp4")
+        if rel_video and rel_video.lower() not in valid_videos:
+            delete_file(preview_path, "previewsDeleted")
+
+    for subtitle_path in DATA_ROOT.rglob("*.vtt"):
+        if not subtitle_path.is_file():
+            continue
+
+        rel_video = _new_layout_video_rel_path(subtitle_path, expected_parent="subtitles")
+        if rel_video and rel_video.lower() not in valid_videos:
+            delete_file(subtitle_path, "subtitlesDeleted")
+            continue
+
+        try:
+            subtitle_path.relative_to(LEGACY_SUBTITLE_ROOT)
+            in_legacy_subtitles = True
+        except ValueError:
+            in_legacy_subtitles = False
+
+        if in_legacy_subtitles:
+            rel_video = _subtitle_cached_video_rel_path(LEGACY_SUBTITLE_ROOT, subtitle_path)
+            if rel_video and rel_video.lower() not in valid_videos:
+                delete_file(subtitle_path, "subtitlesDeleted")
+
+    for metadata_path in DATA_ROOT.rglob("metadata.json"):
+        if not metadata_path.is_file():
+            continue
+        rel_video = _new_layout_video_rel_path(
+            metadata_path,
+            expected_name="metadata.json",
+            expected_parent="scrubbing",
+        )
+        if rel_video and rel_video.lower() not in valid_videos:
+            delete_file(metadata_path, "scrubMetadataDeleted")
+
+    for sprite_path in DATA_ROOT.rglob("sheet_*.jpg"):
+        if not sprite_path.is_file():
+            continue
+        rel_video = _new_layout_video_rel_path(sprite_path, expected_parent="scrubbing")
+        if rel_video and rel_video.lower() not in valid_videos:
+            delete_file(sprite_path, "scrubSpritesDeleted")
+
+    if LEGACY_THUMBNAIL_ROOT.exists():
+        for thumb_path in LEGACY_THUMBNAIL_ROOT.rglob("*.jpg"):
+            if not thumb_path.is_file():
+                continue
+            rel_video = _cached_video_rel_path(LEGACY_THUMBNAIL_ROOT, thumb_path, ".jpg")
+            if rel_video and rel_video.lower() not in valid_videos:
+                delete_file(thumb_path, "thumbnailsDeleted")
+
+    if LEGACY_PREVIEW_ROOT.exists():
+        for preview_path in LEGACY_PREVIEW_ROOT.rglob("*.mp4"):
+            if not preview_path.is_file():
+                continue
+            rel_video = _cached_video_rel_path(LEGACY_PREVIEW_ROOT, preview_path, ".mp4")
+            if rel_video and rel_video.lower() not in valid_videos:
+                delete_file(preview_path, "previewsDeleted")
+
+    if LEGACY_SCRUB_ROOT.exists():
+        for metadata_path in LEGACY_SCRUB_ROOT.rglob("*.json"):
+            if not metadata_path.is_file():
+                continue
+            rel_video = _cached_video_rel_path(LEGACY_SCRUB_ROOT, metadata_path, ".json")
+            if rel_video and rel_video.lower() not in valid_videos:
+                delete_file(metadata_path, "scrubMetadataDeleted")
+
+        for sprite_dir in LEGACY_SCRUB_ROOT.rglob("*.sprites"):
+            if not sprite_dir.is_dir():
+                continue
+            rel = normalize_rel_path(sprite_dir.relative_to(LEGACY_SCRUB_ROOT).as_posix())
+            if not rel.lower().endswith(".sprites"):
+                continue
+            rel_video = normalize_rel_path(rel[: -len(".sprites")])
+            if rel_video.lower() in valid_videos:
+                continue
+            try:
+                shutil.rmtree(sprite_dir)
+            except OSError:
+                continue
+            result["scrubSpritesDeleted"] += 1
+            result["directoriesDeleted"] += 1
+
+    for cache_root in (
+        DATA_ROOT,
+        LEGACY_THUMBNAIL_ROOT,
+        LEGACY_PREVIEW_ROOT,
+        LEGACY_SUBTITLE_ROOT,
+        LEGACY_SCRUB_ROOT,
+    ):
+        if cache_root.exists():
+            result["directoriesDeleted"] += _prune_empty_dirs(cache_root)
+
+    with generation_lock:
+        stale_generation_keys = [
+            key for key in generation_status.keys() if normalize_rel_path(key).lower() not in valid_videos
+        ]
+        for key in stale_generation_keys:
+            generation_status.pop(key, None)
+        result["generationStatusRemoved"] = len(stale_generation_keys)
+
+    with catalog_lock:
+        stale_subtitle_keys = [
+            key for key in subtitle_index.keys() if normalize_rel_path(key).lower() not in valid_videos
+        ]
+        for key in stale_subtitle_keys:
+            subtitle_index.pop(key, None)
+        result["subtitleIndexRemoved"] = len(stale_subtitle_keys)
+
+    return result
 
 
 def run_ffmpeg_with_optional_fallback(
@@ -758,6 +1006,7 @@ def generate_preview(video_path: Path, out_path: Path) -> bool:
     if not FFMPEG_AVAILABLE:
         return False
 
+    start_offset_seconds = float(PREVIEW_START_OFFSET_SECONDS)
     duration = get_duration_seconds(video_path)
     if not duration or duration <= 0:
         # Fallback when duration metadata is unavailable.
@@ -765,7 +1014,7 @@ def generate_preview(video_path: Path, out_path: Path) -> bool:
             "ffmpeg",
             "-y",
             "-ss",
-            "0",
+            f"{start_offset_seconds:.3f}",
             *ffmpeg_cpu_threads_args(),
             *ffmpeg_hwaccel_input_args(),
             "-i",
@@ -790,7 +1039,7 @@ def generate_preview(video_path: Path, out_path: Path) -> bool:
             "ffmpeg",
             "-y",
             "-ss",
-            "0",
+            f"{start_offset_seconds:.3f}",
             *ffmpeg_cpu_threads_args(),
             "-i",
             str(video_path),
@@ -824,11 +1073,17 @@ def generate_preview(video_path: Path, out_path: Path) -> bool:
 
     segment_duration = min(3.0, target_total / segment_count)
     usable_span = max(duration - segment_duration, 0.0)
+    start_min = min(start_offset_seconds, usable_span)
 
     if segment_count == 1:
-        starts = [0.0 if usable_span == 0 else usable_span / 2]
+        starts = [start_min if usable_span <= start_min else (start_min + usable_span) / 2]
+    elif usable_span <= start_min:
+        starts = [start_min for _ in range(segment_count)]
     else:
-        starts = [usable_span * i / (segment_count - 1) for i in range(segment_count)]
+        starts = [
+            start_min + (usable_span - start_min) * i / (segment_count - 1)
+            for i in range(segment_count)
+        ]
 
     with tempfile.TemporaryDirectory(prefix="vrest_preview_") as tmpdir:
         tmp_root = Path(tmpdir)
@@ -1454,7 +1709,13 @@ def background_startup_index() -> None:
 
 @app.before_request
 def require_authentication():
-    if request.endpoint in {"login_page", "logout"}:
+    if request.endpoint in {
+        "login_page",
+        "logout",
+        "favicon",
+        "apple_touch_icon",
+        "site_webmanifest",
+    }:
         return None
 
     if request.path.startswith("/static/"):
@@ -1503,6 +1764,21 @@ def login_page():
 def logout():
     session.clear()
     return redirect(url_for("login_page"))
+
+
+@app.get("/favicon.ico")
+def favicon():
+    return app.send_static_file("icons/favicon.ico")
+
+
+@app.get("/apple-touch-icon.png")
+def apple_touch_icon():
+    return app.send_static_file("icons/apple-touch-icon.png")
+
+
+@app.get("/site.webmanifest")
+def site_webmanifest():
+    return app.send_static_file("site.webmanifest")
 
 
 @app.get("/")
@@ -1691,6 +1967,15 @@ def api_preview_pregenerate():
 def api_preview_pregenerate_status():
     with preview_pregen_lock:
         payload = dict(preview_pregen_state)
+    return jsonify(payload)
+
+
+@app.post("/api/data/cleanup")
+def api_data_cleanup():
+    if CONFIG_ERROR:
+        return jsonify({"error": CONFIG_ERROR}), 400
+
+    payload = cleanup_orphaned_data_files()
     return jsonify(payload)
 
 

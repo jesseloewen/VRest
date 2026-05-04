@@ -4,6 +4,16 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>VRest Login</title>
+    <meta name="theme-color" content="#112227" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="VRest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <link rel="icon" href="{{ url_for('static', filename='icons/favicon.ico') }}" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32x32.png') }}" />
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='icons/favicon-16x16.png') }}" />
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}" />
+    <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -48,10 +58,22 @@
 
         .brand {
             margin: 0 0 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
             font-family: "Bebas Neue", sans-serif;
             letter-spacing: 1px;
             font-size: 2rem;
             color: var(--accent);
+        }
+
+        .brand-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 10px;
+            object-fit: cover;
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+            flex: 0 0 auto;
         }
 
         .hint {
@@ -102,7 +124,10 @@
 </head>
 <body>
     <form class="card" method="post">
-        <h1 class="brand">VRest</h1>
+        <h1 class="brand">
+            <img class="brand-icon" src="{{ url_for('static', filename='icons/icon.png') }}" alt="" aria-hidden="true" />
+            <span>VRest</span>
+        </h1>
         <p class="hint">Enter password to continue.</p>
         {% if error %}
         <p class="error">{{ error }}</p>
