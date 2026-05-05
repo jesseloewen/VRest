@@ -2,6 +2,7 @@ import atexit
 import hmac
 import json
 import logging
+import math
 import os
 import re
 import secrets
@@ -80,6 +81,8 @@ else:
 
 DATA_ROOT = Path(DATA_FOLDER).expanduser().resolve()
 DATA_ROOT.mkdir(parents=True, exist_ok=True)
+CATALOG_SNAPSHOT_PATH = DATA_ROOT / "catalog_snapshot.json"
+CATALOG_SNAPSHOT_VERSION = 1
 
 LEGACY_THUMBNAIL_ROOT = DATA_ROOT / "thumbnails"
 LEGACY_PREVIEW_ROOT = DATA_ROOT / "previews"
@@ -151,6 +154,18 @@ else:
 
 CPU_CORES = max(1, os.cpu_count() or 1)
 
+
+def _env_float(name: str, default: float, min_value: float = 0.0) -> float:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return max(min_value, value)
+
+
 def _env_int(name: str, default: int, min_value: int = 1) -> int:
     raw = os.getenv(name, "").strip()
     if not raw:
@@ -182,6 +197,33 @@ PREVIEW_LIBX264_CRF = _env_int("PREVIEW_LIBX264_CRF", 32)
 PREVIEW_NVENC_PRESET = os.getenv("PREVIEW_NVENC_PRESET", "p1").strip() or "p1"
 PREVIEW_LIBX264_PRESET = os.getenv("PREVIEW_LIBX264_PRESET", "ultrafast").strip() or "ultrafast"
 PREVIEW_START_OFFSET_SECONDS = _env_int("PREVIEW_START_OFFSET_SECONDS", 1, min_value=0)
+PREVIEW_MIN_TOTAL_SECONDS = _env_float("PREVIEW_MIN_TOTAL_SECONDS", 10.0, min_value=1.0)
+PREVIEW_MAX_TOTAL_SECONDS = _env_float(
+    "PREVIEW_MAX_TOTAL_SECONDS", 30.0, min_value=PREVIEW_MIN_TOTAL_SECONDS
+)
+PREVIEW_DURATION_AT_MAX_SECONDS = _env_float(
+    "PREVIEW_DURATION_AT_MAX_SECONDS", 3600.0, min_value=1.0
+)
+PREVIEW_SAMPLE_INTERVAL_SECONDS = _env_float(
+    "PREVIEW_SAMPLE_INTERVAL_SECONDS", 300.0, min_value=1.0
+)
+PREVIEW_MIN_SEGMENTS = _env_int("PREVIEW_MIN_SEGMENTS", 3, min_value=1)
+PREVIEW_MAX_SEGMENTS = _env_int(
+    "PREVIEW_MAX_SEGMENTS", 12, min_value=PREVIEW_MIN_SEGMENTS
+)
+PREVIEW_MIN_SEGMENT_SECONDS = _env_float("PREVIEW_MIN_SEGMENT_SECONDS", 1.0, min_value=0.2)
+PREVIEW_MAX_SEGMENT_SECONDS = _env_float(
+    "PREVIEW_MAX_SEGMENT_SECONDS", 4.0, min_value=PREVIEW_MIN_SEGMENT_SECONDS
+)
+PREVIEW_EDGE_GUARD_MIN_SECONDS = _env_float(
+    "PREVIEW_EDGE_GUARD_MIN_SECONDS", 8.0, min_value=0.0
+)
+PREVIEW_EDGE_GUARD_RATIO = _env_float("PREVIEW_EDGE_GUARD_RATIO", 0.02, min_value=0.0)
+PREVIEW_EDGE_GUARD_MAX_SECONDS = _env_float(
+    "PREVIEW_EDGE_GUARD_MAX_SECONDS",
+    180.0,
+    min_value=PREVIEW_EDGE_GUARD_MIN_SECONDS,
+)
 FFMPEG_CPU_THREADS = os.getenv("FFMPEG_CPU_THREADS", "0").strip() or "0"
 
 LOGGER.info(
@@ -1020,7 +1062,7 @@ def generate_preview(video_path: Path, out_path: Path) -> bool:
             "-i",
             str(video_path),
             "-t",
-            "12",
+            f"{PREVIEW_MIN_TOTAL_SECONDS:.3f}",
             "-vf",
             preview_scale_filter(),
             "-c:v",
@@ -1044,7 +1086,7 @@ def generate_preview(video_path: Path, out_path: Path) -> bool:
             "-i",
             str(video_path),
             "-t",
-            "12",
+            f"{PREVIEW_MIN_TOTAL_SECONDS:.3f}",
             "-vf",
             "scale=480:-2",
             "-c:v",
@@ -1062,26 +1104,44 @@ def generate_preview(video_path: Path, out_path: Path) -> bool:
         ok, _ = run_ffmpeg_with_optional_fallback(primary_cmd, fallback_cmd, timeout=360)
         return ok and out_path.exists()
 
-    target_total = min(12.0, duration)
-    min_segment_duration = 0.8
-    max_segments = 4
+    min_total = min(PREVIEW_MIN_TOTAL_SECONDS, PREVIEW_MAX_TOTAL_SECONDS)
+    max_total = max(PREVIEW_MIN_TOTAL_SECONDS, PREVIEW_MAX_TOTAL_SECONDS)
+    duration_scale = max(PREVIEW_DURATION_AT_MAX_SECONDS, 1.0)
 
-    if duration < min_segment_duration:
-        segment_count = 1
-    else:
-        segment_count = max(1, min(max_segments, int(duration / min_segment_duration)))
+    duration_ratio = min(duration / duration_scale, 1.0)
+    target_total = min_total + ((max_total - min_total) * duration_ratio)
+    target_total = min(max_total, max(min_total, target_total))
+    target_total = min(target_total, duration)
 
-    segment_duration = min(3.0, target_total / segment_count)
+    segment_count_guess = max(1, math.ceil(duration / PREVIEW_SAMPLE_INTERVAL_SECONDS))
+    segment_count = max(PREVIEW_MIN_SEGMENTS, min(PREVIEW_MAX_SEGMENTS, segment_count_guess))
+
+    segment_duration = target_total / max(segment_count, 1)
+    segment_duration = max(PREVIEW_MIN_SEGMENT_SECONDS, segment_duration)
+    segment_duration = min(PREVIEW_MAX_SEGMENT_SECONDS, segment_duration)
+    segment_duration = min(segment_duration, duration)
+
     usable_span = max(duration - segment_duration, 0.0)
-    start_min = min(start_offset_seconds, usable_span)
+    edge_guard_seconds = max(
+        start_offset_seconds,
+        PREVIEW_EDGE_GUARD_MIN_SECONDS,
+        duration * PREVIEW_EDGE_GUARD_RATIO,
+    )
+    edge_guard_seconds = min(PREVIEW_EDGE_GUARD_MAX_SECONDS, edge_guard_seconds)
 
-    if segment_count == 1:
-        starts = [start_min if usable_span <= start_min else (start_min + usable_span) / 2]
-    elif usable_span <= start_min:
-        starts = [start_min for _ in range(segment_count)]
+    start_min = min(edge_guard_seconds, usable_span)
+    start_max = max(start_min, duration - edge_guard_seconds - segment_duration)
+
+    if start_max <= start_min:
+        centered_start = max((duration - segment_duration) / 2, 0.0)
+        fallback_start = max(start_offset_seconds, centered_start)
+        fallback_start = min(fallback_start, usable_span)
+        starts = [fallback_start for _ in range(segment_count)]
+    elif segment_count == 1:
+        starts = [(start_min + start_max) / 2]
     else:
         starts = [
-            start_min + (usable_span - start_min) * i / (segment_count - 1)
+            start_min + (start_max - start_min) * i / (segment_count - 1)
             for i in range(segment_count)
         ]
 
@@ -1197,7 +1257,7 @@ def remove_scrub_sprite_files(sprite_dir: Path) -> None:
 
 
 def build_scrub_metadata(
-    rel_path: str, duration: float, sheet_files: List[Path], generated_ts: str
+    _rel_path: str, duration: float, sheet_files: List[Path], generated_ts: str
 ) -> Dict:
     frames_per_sheet = SCRUB_TILE_COLUMNS * SCRUB_TILE_ROWS
     total_frames = int(duration // SCRUB_INTERVAL_SECONDS) + 1
@@ -1234,7 +1294,7 @@ def build_scrub_metadata(
 
     return {
         "version": 1,
-        "videoPath": rel_path,
+        "spriteFolderPath": "scrubbing",
         "durationSeconds": duration,
         "generatedAt": generated_ts,
         "intervalSeconds": SCRUB_INTERVAL_SECONDS,
@@ -1247,6 +1307,65 @@ def build_scrub_metadata(
         "sheets": sheets,
         "frames": frames,
     }
+
+
+def normalize_scrub_metadata_payload(payload: object, _rel_path: str) -> Tuple[Optional[Dict], bool]:
+    if not isinstance(payload, dict):
+        return None, False
+
+    changed = False
+    normalized_payload = dict(payload)
+
+    if "videoPath" in normalized_payload:
+        normalized_payload.pop("videoPath", None)
+        changed = True
+
+    data_relative_scrub_dir = "scrubbing"
+    path_keys = (
+        "folder",
+        "folderPath",
+        "spriteFolder",
+        "spriteFolderPath",
+        "spritesFolder",
+        "spritesFolderPath",
+    )
+    for key in path_keys:
+        if key in normalized_payload and normalized_payload.get(key) != data_relative_scrub_dir:
+            normalized_payload[key] = data_relative_scrub_dir
+            changed = True
+
+    if normalized_payload.get("spriteFolderPath") != data_relative_scrub_dir:
+        normalized_payload["spriteFolderPath"] = data_relative_scrub_dir
+        changed = True
+
+    sheets = normalized_payload.get("sheets")
+    if isinstance(sheets, list):
+        normalized_sheets: List[object] = []
+        for index, sheet in enumerate(sheets):
+            if not isinstance(sheet, dict):
+                normalized_sheets.append(sheet)
+                continue
+
+            normalized_sheet = dict(sheet)
+            raw_file = normalized_sheet.get("file")
+            if isinstance(raw_file, str):
+                normalized_file = PurePosixPath(raw_file.replace("\\", "/")).name
+                fallback_name = f"sheet_{index:04d}.jpg"
+                normalized_file = normalized_file or fallback_name
+                if normalized_file != raw_file:
+                    normalized_sheet["file"] = normalized_file
+                    changed = True
+            elif "file" in normalized_sheet:
+                normalized_sheet["file"] = f"sheet_{index:04d}.jpg"
+                changed = True
+
+            normalized_sheets.append(normalized_sheet)
+
+        if normalized_sheets != sheets:
+            normalized_payload["sheets"] = normalized_sheets
+            changed = True
+
+    return normalized_payload, changed
 
 
 def generate_scrub_sprites(video_path: Path, rel_path: str, force: bool = False) -> bool:
@@ -1397,6 +1516,70 @@ def sort_tree(node: Dict) -> None:
     node["files"].sort(key=lambda x: x["name"].lower())
     for child in node["folders"]:
         sort_tree(child)
+
+
+def persist_catalog_snapshot(root: Dict, files: List[Dict], subs_index: Dict[str, Dict[str, Dict[str, str]]]) -> None:
+    payload = {
+        "version": CATALOG_SNAPSHOT_VERSION,
+        "savedAt": datetime.now(timezone.utc).isoformat(),
+        "savedAtTs": time.time(),
+        "root": root,
+        "files": files,
+        "subtitleIndex": subs_index,
+        "count": len(files),
+    }
+
+    tmp_path = CATALOG_SNAPSHOT_PATH.with_suffix(f"{CATALOG_SNAPSHOT_PATH.suffix}.tmp")
+    try:
+        tmp_path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+        tmp_path.replace(CATALOG_SNAPSHOT_PATH)
+    except OSError:
+        LOGGER.warning("Failed to persist catalog snapshot to %s", CATALOG_SNAPSHOT_PATH)
+
+
+def load_catalog_snapshot() -> bool:
+    if not CATALOG_SNAPSHOT_PATH.exists():
+        return False
+
+    try:
+        payload = json.loads(CATALOG_SNAPSHOT_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        LOGGER.warning("Catalog snapshot unreadable: %s", CATALOG_SNAPSHOT_PATH)
+        return False
+
+    if not isinstance(payload, dict):
+        return False
+
+    version = payload.get("version")
+    if version not in {None, CATALOG_SNAPSHOT_VERSION}:
+        LOGGER.info("Ignoring catalog snapshot version %s", version)
+        return False
+
+    root = payload.get("root")
+    files = payload.get("files")
+    subs_index = payload.get("subtitleIndex")
+    if not isinstance(root, dict) or not isinstance(files, list) or not isinstance(subs_index, dict):
+        return False
+
+    with catalog_lock:
+        global catalog_tree, catalog_files, subtitle_index
+        catalog_tree = root
+        catalog_files = files
+        subtitle_index = subs_index
+
+    saved_at_ts = payload.get("savedAtTs")
+    try:
+        cached_scan_ts = float(saved_at_ts)
+    except (TypeError, ValueError):
+        cached_scan_ts = 0.0
+
+    if cached_scan_ts > 0:
+        with catalog_state_lock:
+            global catalog_last_scan_ts
+            catalog_last_scan_ts = cached_scan_ts
+
+    LOGGER.info("Loaded %d videos from catalog snapshot", len(files))
+    return True
 
 
 def scan_video_library() -> Tuple[Dict, List[Dict], Dict[str, Dict[str, Dict[str, str]]]]:
@@ -1660,6 +1843,8 @@ def refresh_catalog() -> None:
         catalog_files = files
         subtitle_index = subs
 
+    persist_catalog_snapshot(root, files, subs)
+
     for file_meta in files:
         queue_thumbnail_generation(file_meta["path"])
 
@@ -1915,7 +2100,22 @@ def api_scrub_metadata(rel_path: str):
     if metadata_path is None or not metadata_path.exists():
         return jsonify({"status": "failed"}), 500
 
-    return send_file(metadata_path, mimetype="application/json", conditional=True)
+    try:
+        payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return send_file(metadata_path, mimetype="application/json", conditional=True)
+
+    normalized_payload, changed = normalize_scrub_metadata_payload(payload, normalized)
+    if normalized_payload is None:
+        return send_file(metadata_path, mimetype="application/json", conditional=True)
+
+    if changed:
+        try:
+            metadata_path.write_text(json.dumps(normalized_payload, indent=2), encoding="utf-8")
+        except OSError:
+            LOGGER.warning("Failed to persist normalized scrub metadata for %s", normalized)
+
+    return jsonify(normalized_payload)
 
 
 @app.get("/api/scrub/<path:rel_path>/sprite/<int:sheet_index>.jpg")
@@ -2093,6 +2293,10 @@ def shutdown_executor() -> None:
     thumbnail_executor.shutdown(wait=False)
     preview_executor.shutdown(wait=False)
     scrub_executor.shutdown(wait=False)
+
+
+if not CONFIG_ERROR:
+    load_catalog_snapshot()
 
 
 threading.Thread(target=background_startup_index, daemon=True).start()

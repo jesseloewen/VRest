@@ -78,6 +78,18 @@ PREVIEW_NVENC_PRESET=p1
 PREVIEW_NVENC_CQ=34
 PREVIEW_LIBX264_PRESET=ultrafast
 PREVIEW_LIBX264_CRF=32
+PREVIEW_START_OFFSET_SECONDS=1
+PREVIEW_MIN_TOTAL_SECONDS=10
+PREVIEW_MAX_TOTAL_SECONDS=30
+PREVIEW_DURATION_AT_MAX_SECONDS=3600
+PREVIEW_SAMPLE_INTERVAL_SECONDS=300
+PREVIEW_MIN_SEGMENTS=3
+PREVIEW_MAX_SEGMENTS=12
+PREVIEW_MIN_SEGMENT_SECONDS=1.0
+PREVIEW_MAX_SEGMENT_SECONDS=4.0
+PREVIEW_EDGE_GUARD_MIN_SECONDS=8
+PREVIEW_EDGE_GUARD_RATIO=0.02
+PREVIEW_EDGE_GUARD_MAX_SECONDS=180
 ```
 
 Notes:
@@ -88,6 +100,9 @@ Notes:
 - Set USE_GPU=false to force CPU-only generation even if NVIDIA hardware is detected.
 - If APP_SECRET_KEY is omitted, a temporary key is generated for the current process.
 - FFMPEG_CPU_THREADS=0 lets ffmpeg auto-select thread usage.
+- Preview generation scales total preview length from 10s to 30s based on video duration.
+- Hour-long and longer videos reach the 30s preview cap by default.
+- Preview segments are sampled away from both start/end edges to reduce intro/outro card captures.
 
 ## Run (Python)
 

@@ -154,6 +154,76 @@
             flex: 0 0 auto;
         }
 
+        .preview-mode-toggle {
+            height: 40px;
+            padding: 0 10px;
+            border: 1px solid rgba(141, 208, 197, 0.3);
+            background: rgba(9, 19, 22, 0.7);
+            color: var(--text);
+            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            user-select: none;
+            flex: 0 0 auto;
+        }
+
+        .preview-mode-toggle:hover {
+            border-color: rgba(90, 216, 184, 0.75);
+            background: rgba(12, 25, 30, 0.9);
+        }
+
+        .preview-mode-text {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: #dffaf3;
+            letter-spacing: 0.01em;
+        }
+
+        .preview-mode-input {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .preview-mode-switch {
+            position: relative;
+            width: 38px;
+            height: 22px;
+            border-radius: 999px;
+            background: rgba(120, 151, 146, 0.45);
+            border: 1px solid rgba(141, 208, 197, 0.32);
+            transition: background 150ms ease, border-color 150ms ease;
+        }
+
+        .preview-mode-switch::after {
+            content: "";
+            position: absolute;
+            left: 2px;
+            top: 2px;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #ecfffa;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+            transition: transform 150ms ease;
+        }
+
+        .preview-mode-input:checked + .preview-mode-switch {
+            background: rgba(45, 191, 152, 0.66);
+            border-color: rgba(90, 216, 184, 0.8);
+        }
+
+        .preview-mode-input:checked + .preview-mode-switch::after {
+            transform: translateX(16px);
+        }
+
+        .preview-mode-input:focus-visible + .preview-mode-switch {
+            outline: 2px solid rgba(90, 216, 184, 0.8);
+            outline-offset: 2px;
+        }
+
         .sidebar {
             padding: 14px;
             border-right: 1px solid var(--panel-border);
@@ -560,6 +630,10 @@
             outline: none;
         }
 
+        .item-size-select {
+            min-width: 116px;
+        }
+
         .sort-dir-btn {
             width: 40px;
             height: 40px;
@@ -645,17 +719,15 @@
         }
 
         .duration-pill {
-            position: absolute;
-            left: 10px;
-            bottom: 10px;
-            z-index: 3;
             font-size: 0.74rem;
             color: #e9fff9;
             background: rgba(4, 12, 15, 0.72);
             border: 1px solid rgba(141, 208, 197, 0.55);
             border-radius: 999px;
             padding: 4px 8px;
-            backdrop-filter: blur(3px);
+            backdrop-filter: blur(2px);
+            flex: 0 0 auto;
+            margin-left: auto;
         }
 
         .card-thumb,
@@ -663,7 +735,8 @@
             width: 100%;
             height: 100%;
             display: block;
-            object-fit: cover;
+            object-fit: contain;
+            object-position: center;
         }
 
         .card-preview {
@@ -723,16 +796,25 @@
 
         .folder-pill {
             display: inline-block;
-            align-self: flex-start;
             font-size: 0.74rem;
             color: #0a1618;
             background: linear-gradient(90deg, var(--accent), #79f0d2);
             border-radius: 999px;
             padding: 4px 8px;
-            max-width: 100%;
+            width: fit-content;
+            max-width: calc(100% - 72px);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            flex: 0 1 auto;
+        }
+
+        .card-meta {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 8px;
+            min-width: 0;
         }
 
         .video-card.skeleton .card-media {
@@ -1000,7 +1082,7 @@
 
             .library-tools {
                 display: grid;
-                grid-template-columns: minmax(0, 1fr) auto auto;
+                grid-template-columns: minmax(0, 1fr) auto auto auto;
                 gap: 6px;
             }
 
@@ -1051,6 +1133,10 @@
             .video-card {
                 -webkit-touch-callout: none;
                 user-select: none;
+            }
+
+            .video-grid {
+                grid-template-columns: repeat(var(--mobile-grid-columns, 2), minmax(0, 1fr));
             }
 
             dialog.video-dialog {
@@ -1114,9 +1200,14 @@
             }
 
             .generation-toggle-btn,
+            .preview-mode-toggle,
             .topbar-right .randomize-btn {
                 min-width: 0;
                 padding: 0 8px;
+                font-size: 0.72rem;
+            }
+
+            .preview-mode-text {
                 font-size: 0.72rem;
             }
 
@@ -1125,7 +1216,7 @@
             }
 
             .library-tools {
-                grid-template-columns: minmax(0, 1fr) auto;
+                grid-template-columns: minmax(0, 1fr) auto auto;
             }
 
             #rerandomizeBtn {
@@ -1152,10 +1243,25 @@
             }
 
             .generation-toggle-btn,
+            .preview-mode-toggle,
             .topbar-right .randomize-btn {
                 width: auto;
                 height: 36px;
                 padding: 0 7px;
+            }
+
+            .preview-mode-switch {
+                width: 34px;
+                height: 20px;
+            }
+
+            .preview-mode-switch::after {
+                width: 14px;
+                height: 14px;
+            }
+
+            .preview-mode-input:checked + .preview-mode-switch::after {
+                transform: translateX(14px);
             }
         }
 
@@ -1177,6 +1283,16 @@
             </div>
             <div class="topbar-right">
                 <div class="topbar-status" id="statusText">Scanning videos...</div>
+                <label class="preview-mode-toggle" for="previewModeToggle">
+                    <span class="preview-mode-text">Preview</span>
+                    <input
+                        id="previewModeToggle"
+                        class="preview-mode-input"
+                        type="checkbox"
+                        aria-label="Enable preview mode"
+                    />
+                    <span class="preview-mode-switch" aria-hidden="true"></span>
+                </label>
                 <button id="reindexBtn" class="sort-dir-btn randomize-btn" type="button" title="Start indexing again">Re-Index</button>
                 <button
                     id="toggleGenerationPanel"
@@ -1221,6 +1337,12 @@
                 </select>
                 <button id="sortDirBtn" class="sort-dir-btn" type="button" aria-label="Reverse sort direction">↑</button>
                 <button id="rerandomizeBtn" class="sort-dir-btn randomize-btn" type="button" title="Re-randomize video order" hidden>Shuffle</button>
+                <select id="itemSizeSelect" class="sort-select item-size-select" aria-label="Item size">
+                    <option value="xs">Size XS</option>
+                    <option value="sm" selected>Size S</option>
+                    <option value="md">Size M</option>
+                    <option value="lg">Size L</option>
+                </select>
             </div>
             <div class="crumbs" id="breadcrumbs"></div>
             <section class="video-grid" id="videoGrid"></section>
@@ -1299,6 +1421,8 @@
         const searchInputEl = document.getElementById("searchInput");
         const clearSearchBtnEl = document.getElementById("clearSearchBtn");
         const sortSelectEl = document.getElementById("sortSelect");
+        const itemSizeSelectEl = document.getElementById("itemSizeSelect");
+        const previewModeToggleEl = document.getElementById("previewModeToggle");
         const reindexBtnEl = document.getElementById("reindexBtn");
         const sortDirBtnEl = document.getElementById("sortDirBtn");
         const rerandomizeBtnEl = document.getElementById("rerandomizeBtn");
@@ -1341,12 +1465,16 @@
             folderFilter: "",
             cards: [],
             observer: null,
+            previewObserver: null,
+            cardMeta: new WeakMap(),
+            previewModeEnabled: false,
             isMobile: window.matchMedia("(max-width: 900px)").matches,
             expandedFolders: new Set([""]),
             thumbnailRetryTimers: new Map(),
             searchQuery: "",
             sortKey: "random",
             sortDirection: 1,
+            itemSizeKey: "sm",
             randomSortTokens: new Map(),
             libraryPollTimer: null,
             generationPollTimer: null,
@@ -1371,6 +1499,16 @@
         const SORT_KEY_STORAGE_KEY = "vrest.sort.key";
         const SORT_DIR_STORAGE_KEY = "vrest.sort.direction";
         const SORT_KEYS = new Set(["default", "az", "dateAdded", "length", "size", "random"]);
+        const ITEM_SIZE_STORAGE_KEY = "vrest.item.size";
+        const ITEM_SIZE_MOBILE_STORAGE_KEY = "vrest.item.size.mobile";
+        const PREVIEW_MODE_STORAGE_KEY = "vrest.preview.mode.enabled";
+        const ITEM_SIZE_PRESETS = {
+            xs: 180,
+            sm: 220,
+            md: 280,
+            lg: 340,
+        };
+        const ITEM_SIZE_KEYS = new Set(Object.keys(ITEM_SIZE_PRESETS));
 
         function isTouchLike() {
             return window.matchMedia("(hover: none), (pointer: coarse)").matches;
@@ -1432,6 +1570,9 @@
             }
             if (!state.isMobile && wasMobile) {
                 appShell.classList.remove("sidebar-open");
+            }
+            if (state.isMobile !== wasMobile) {
+                loadItemSizePreference();
             }
         });
 
@@ -2366,6 +2507,65 @@
             sortSelectEl.value = state.sortKey;
         }
 
+        function applyItemSize(itemSizeKey) {
+            const normalized = ITEM_SIZE_KEYS.has(itemSizeKey) ? itemSizeKey : "sm";
+            const sizePx = ITEM_SIZE_PRESETS[normalized];
+            state.itemSizeKey = normalized;
+            document.documentElement.style.setProperty("--grid-min", `${sizePx}px`);
+            itemSizeSelectEl.value = normalized;
+            applyMobileGridColumns(normalized);
+        }
+
+        function mobileGridColumnsForSize(itemSizeKey) {
+            if (itemSizeKey === "lg") {
+                return 1;
+            }
+            if (itemSizeKey === "md") {
+                return 2;
+            }
+            if (itemSizeKey === "sm") {
+                return 3;
+            }
+            return 4;
+        }
+
+        function applyMobileGridColumns(itemSizeKey) {
+            if (!state.isMobile) {
+                document.documentElement.style.removeProperty("--mobile-grid-columns");
+                return;
+            }
+            const columns = mobileGridColumnsForSize(itemSizeKey);
+            document.documentElement.style.setProperty("--mobile-grid-columns", String(columns));
+        }
+
+        function itemSizeStorageKeyForViewport() {
+            return state.isMobile ? ITEM_SIZE_MOBILE_STORAGE_KEY : ITEM_SIZE_STORAGE_KEY;
+        }
+
+        function defaultItemSizeForViewport() {
+            return state.isMobile ? "lg" : "sm";
+        }
+
+        function saveItemSizePreference() {
+            try {
+                window.localStorage.setItem(itemSizeStorageKeyForViewport(), state.itemSizeKey);
+            } catch (error) {
+                // Ignore storage errors (privacy mode, blocked storage, etc.)
+            }
+        }
+
+        function loadItemSizePreference() {
+            let savedItemSize = null;
+
+            try {
+                savedItemSize = window.localStorage.getItem(itemSizeStorageKeyForViewport());
+            } catch (error) {
+                // Ignore storage errors and keep defaults.
+            }
+
+            applyItemSize(savedItemSize || defaultItemSizeForViewport());
+        }
+
         function updateSortDirectionButton() {
             const isRandom = state.sortKey === "random";
             sortDirBtnEl.hidden = isRandom;
@@ -2522,6 +2722,87 @@
             );
         }
 
+        function buildPreviewObserver() {
+            if (state.previewObserver) {
+                state.previewObserver.disconnect();
+            }
+
+            state.previewObserver = new IntersectionObserver(
+                (entries) => {
+                    for (const entry of entries) {
+                        const card = entry.target;
+                        const inView = entry.isIntersecting && entry.intersectionRatio >= 0.2;
+                        card.dataset.previewInView = inView ? "true" : "false";
+
+                        if (!state.previewModeEnabled) {
+                            continue;
+                        }
+
+                        const meta = state.cardMeta.get(card);
+                        if (!meta) {
+                            continue;
+                        }
+
+                        if (inView) {
+                            activatePreview(card, meta);
+                        } else {
+                            card.dataset.previewActive = "false";
+                            card.dataset.previewToken = "";
+                            clearPreview(card);
+                        }
+                    }
+                },
+                {
+                    root: null,
+                    rootMargin: "120px",
+                    threshold: [0, 0.2, 0.5],
+                }
+            );
+        }
+
+        function setPreviewModeEnabled(enabled) {
+            state.previewModeEnabled = Boolean(enabled);
+            previewModeToggleEl.checked = state.previewModeEnabled;
+
+            if (!state.previewModeEnabled) {
+                clearAllPreviews();
+                return;
+            }
+
+            state.cards.forEach((card) => {
+                if (card.dataset.previewInView !== "true") {
+                    return;
+                }
+                const meta = state.cardMeta.get(card);
+                if (meta) {
+                    activatePreview(card, meta);
+                }
+            });
+        }
+
+        function savePreviewModePreference() {
+            try {
+                window.localStorage.setItem(
+                    PREVIEW_MODE_STORAGE_KEY,
+                    state.previewModeEnabled ? "true" : "false"
+                );
+            } catch (error) {
+                // Ignore storage errors (privacy mode, blocked storage, etc.)
+            }
+        }
+
+        function loadPreviewModePreference() {
+            let savedPreviewMode = null;
+
+            try {
+                savedPreviewMode = window.localStorage.getItem(PREVIEW_MODE_STORAGE_KEY);
+            } catch (error) {
+                // Ignore storage errors and keep defaults.
+            }
+
+            setPreviewModeEnabled(savedPreviewMode === "true");
+        }
+
         function clearPreview(card) {
             const preview = card.querySelector("video.card-preview");
             card.classList.remove("previewing", "preview-loading", "preview-error");
@@ -2628,13 +2909,15 @@
                 <div class="card-media">
                     <img class="card-thumb" alt="${meta.name}" data-src="${thumbSrc}" loading="lazy" />
                     <video class="card-preview" muted loop playsinline preload="none"></video>
-                    <span class="duration-pill">${durationLabel}</span>
                     <div class="preview-loader">Generating preview...</div>
                     <div class="preview-error">Preview failed</div>
                 </div>
                 <div class="card-body">
                     <h4 class="card-title">${fileTitle(meta.name)}</h4>
-                    <span class="folder-pill">${folderLabel(meta.folder)}</span>
+                    <div class="card-meta">
+                        <span class="folder-pill">${folderLabel(meta.folder)}</span>
+                        <span class="duration-pill">${durationLabel}</span>
+                    </div>
                 </div>
             `;
 
@@ -2654,10 +2937,17 @@
 
             if (!isTouchLike()) {
                 card.addEventListener("mouseenter", () => {
+                    if (state.previewModeEnabled) {
+                        activatePreview(card, meta);
+                        return;
+                    }
                     clearAllPreviews(card);
                     activatePreview(card, meta);
                 });
                 card.addEventListener("mouseleave", () => {
+                    if (state.previewModeEnabled && card.dataset.previewInView === "true") {
+                        return;
+                    }
                     card.dataset.previewActive = "false";
                     card.dataset.previewToken = "";
                     clearPreview(card);
@@ -2695,7 +2985,9 @@
                     holdStartY = Number(event.clientY || 0);
                     holdTimer = window.setTimeout(() => {
                         holdActivated = true;
-                        clearAllPreviews(card);
+                        if (!state.previewModeEnabled) {
+                            clearAllPreviews(card);
+                        }
                         activatePreview(card, meta);
                     }, PREVIEW_HOLD_DELAY_MS);
                 };
@@ -2755,6 +3047,7 @@
             state.cards.forEach((card) => clearThumbnailRetry(card));
             videoGridEl.innerHTML = "";
             state.cards = [];
+            state.cardMeta = new WeakMap();
 
             const filtered = getVisibleVideos();
             emptyStateEl.hidden = filtered.length > 0;
@@ -2765,11 +3058,14 @@
             }
 
             buildObserver();
+            buildPreviewObserver();
             filtered.forEach((meta, idx) => {
                 const card = renderCard(meta, idx);
                 state.cards.push(card);
+                state.cardMeta.set(card, meta);
                 videoGridEl.appendChild(card);
                 state.observer.observe(card);
+                state.previewObserver.observe(card);
             });
 
             buildBreadcrumbs();
@@ -3105,6 +3401,16 @@
             renderGrid();
         });
 
+        itemSizeSelectEl.addEventListener("change", () => {
+            applyItemSize(itemSizeSelectEl.value);
+            saveItemSizePreference();
+        });
+
+        previewModeToggleEl.addEventListener("change", () => {
+            setPreviewModeEnabled(previewModeToggleEl.checked);
+            savePreviewModePreference();
+        });
+
         sortDirBtnEl.addEventListener("click", () => {
             state.sortDirection = state.sortDirection >= 0 ? -1 : 1;
             saveSortPreferences();
@@ -3143,6 +3449,8 @@
         });
 
         loadSortPreferences();
+        loadItemSizePreference();
+        loadPreviewModePreference();
         updateSearchClearButton();
         updateSortDirectionButton();
         initProPlayer();
