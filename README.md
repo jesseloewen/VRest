@@ -2,50 +2,70 @@
 
 VRest is a Flask-based local video browser for large libraries.
 
-It scans a configured video folder, renders a folder tree UI, and serves:
+It scans a configured video folder, builds a folder tree, and serves:
 - On-demand thumbnails
-- On-demand previews
-- Streamed playback
-- Subtitle extraction and conversion to VTT
-- Scrub-preview sprite sheets for timeline preview
+- On-demand preview videos
+- Direct streamed playback of source files
+- External and embedded subtitle tracks as WebVTT
+- Scrub-preview sprite sheets and metadata for timeline hover previews
+
+## Current Implementation
+
+The current app combines a Flask API (`app.py`) with a single-page frontend (`templates/index.html`).
+
+Backend behavior:
+- Loads `.env` settings with sane defaults.
+- Validates `VIDEO_FOLDER` and creates `DATA_FOLDER` if needed.
+- Detects ffmpeg capabilities (CUDA decode, NVENC encode, `scale_cuda`) and falls back to CPU when unavailable.
+- Uses separate thread pools for thumbnail, preview, and scrub jobs.
+- Stores a compact catalog snapshot at `DATA_FOLDER/catalog_snapshot.json` and starts background indexing on boot.
+- Throttles re-scan requests (minimum interval) to avoid repeated expensive scans.
+
+Frontend behavior:
+- Folder sidebar + searchable video grid.
+- Sort modes: default, A-Z, date added, length, file size, random (default).
+- Item size presets and persistent UI preferences in localStorage.
+- Optional hover preview mode for cards.
+- Full player dialog with Plyr, scrub thumbnails, subtitle track loading, next/previous navigation, and auto-play next.
+- Jobs drawer with live status, bulk generation controls, manual reindex, and orphaned-data cleanup trigger.
 
 ## Features
 
-- Fast folder + file browsing with search and sorting
-- Generation jobs panel (right-side drawer) with live status for thumbnail/preview/scrub
-- Lazy thumbnail generation plus on-demand preview/scrub generation
-- Optional bulk generation actions from UI for previews and scrubbing
-- ffmpeg hardware acceleration support (CUDA/NVENC/scale_cuda) with CPU fallback
-- Subtitle support:
-  - External `.srt` files next to videos
-  - Embedded subtitle tracks extracted to `.vtt`
-- Optional password login
-- Background indexing and generation jobs
-- Pinokio script support (`install.js`, `start.js`, `reset.js`)
+- Background catalog indexing with incremental API refresh.
+- Lazy thumbnail generation after indexing.
+- Preview generation on demand, or in bulk from the Jobs panel.
+- Scrub sprite generation on demand, or in bulk from the Jobs panel.
+- Subtitle discovery:
+  - External `.srt` files near video files
+  - Embedded subtitle streams detected via `ffprobe`
+- Automatic conversion/extraction to `.vtt` subtitle cache files.
+- Password-protected login with persistent session cookies (optional).
+- Pinokio integration via `install.js`, `start.js`, and `reset.js`.
 
 ## Project Structure
 
-- `app.py`: Flask backend, media generation, cache handling, APIs
-- `templates/index.html`: Main single-page UI (tree, grid, player)
-- `templates/login.html`: Optional auth page
-- `requirements.txt`: Python dependencies
-- `pinokio.js`: Pinokio menu/runtime integration
-- `install.js`: Creates venv and installs dependencies
-- `start.js`: Runs the Flask server and publishes URL to Pinokio
-- `reset.js`: Removes venv and local generated data cache
-- `.env.example`: Environment variable template
+- `app.py`: Flask backend, indexing, generation pipelines, API routes.
+- `templates/index.html`: Main UI (tree, grid, jobs panel, player).
+- `templates/login.html`: Login page when password mode is enabled.
+- `static/`: Icons and web manifest.
+- `.env.example`: Environment template.
+- `requirements.txt`: Python dependencies.
+- `install.js`: Creates venv and installs Python dependencies.
+- `start.js`: Runs the server and exposes local URL in Pinokio.
+- `reset.js`: Removes `venv` and local `data` folder cache.
+- `pinokio.js`: Pinokio menu/runtime metadata.
 
 ## Requirements
 
 - Python 3.10+
-- `ffmpeg` and `ffprobe` available on `PATH`
+- `ffmpeg` and `ffprobe` on `PATH`
 
-Without ffmpeg/ffprobe, browsing works but thumbnails/previews/subtitles/scrub assets cannot be generated.
+Without ffmpeg/ffprobe, browsing/index metadata still works, but media artifact generation (thumbnail, preview, subtitles, scrub) will fail.
 
 ## Configuration
 
 1. Copy `.env.example` to `.env`.
-2. Set at least:
+2. Minimum required settings:
 
 ```env
 VIDEO_FOLDER=C:/absolute/path/to/your/videos
@@ -54,17 +74,17 @@ HOST=0.0.0.0
 PORT=3232
 ```
 
-3. Auth/session settings:
+3. Auth/session options:
 
 ```env
 APP_PASSWORD_ENABLED=true
 APP_PASSWORD=change-me
 APP_SECRET_KEY=replace-with-a-long-random-secret
-APP_SESSION_COOKIE_NAME=vrest_session_custom
+APP_SESSION_COOKIE_NAME=
 APP_SESSION_REMEMBER_DAYS=365
 ```
 
-4. Hardware/performance settings (optional):
+4. Performance and quality options (optional):
 
 ```env
 USE_GPU=true
@@ -93,16 +113,11 @@ PREVIEW_EDGE_GUARD_MAX_SECONDS=180
 ```
 
 Notes:
-- Authentication is enabled by default when APP_PASSWORD_ENABLED is true and APP_PASSWORD is set.
-- Set APP_PASSWORD_ENABLED=false to disable password auth entirely.
-- If APP_PASSWORD is empty, authentication is effectively disabled.
-- APP_SESSION_REMEMBER_DAYS controls how long login is remembered across browser restarts.
-- Set USE_GPU=false to force CPU-only generation even if NVIDIA hardware is detected.
-- If APP_SECRET_KEY is omitted, a temporary key is generated for the current process.
-- FFMPEG_CPU_THREADS=0 lets ffmpeg auto-select thread usage.
-- Preview generation scales total preview length from 10s to 30s based on video duration.
-- Hour-long and longer videos reach the 30s preview cap by default.
-- Preview segments are sampled away from both start/end edges to reduce intro/outro card captures.
+- Auth is enforced only when both `APP_PASSWORD_ENABLED=true` and `APP_PASSWORD` is non-empty.
+- If `APP_SECRET_KEY` is omitted, a temporary key is generated at runtime (existing login sessions become invalid after restart).
+- Default cookie name is `vrest_session_<PORT>` unless `APP_SESSION_COOKIE_NAME` is set.
+- `FFMPEG_CPU_THREADS=0` allows ffmpeg to auto-select CPU threads.
+- `USE_GPU=false` forces CPU-only generation paths.
 
 ## Run (Python)
 
@@ -118,52 +133,71 @@ Open `http://localhost:3232` (or your configured port).
 
 ## Run (Pinokio)
 
-- `install.js`: bootstrap environment
-- `start.js`: launch server
-- `reset.js`: clean environment/cache data
+- `install.js`: bootstrap venv and install dependencies.
+- `start.js`: launch Flask server and publish local URL.
+- `reset.js`: delete venv and `data` cache folder, then recreate `data`.
 
 ## HTTP Endpoints
 
-- `GET /`: Main UI
-- `GET /login`: Login page (if password enabled)
-- `GET /logout`: Clear session
-- `GET /api/browse`: Catalog tree + file metadata
-- `GET /api/video/<path>`: Stream original video file
-- `GET /api/thumbnail/<path>`: Thumbnail JPEG (or `202` while generating)
-- `GET /api/preview/<path>`: Preview MP4
-- `POST /api/preview/pregenerate`: Start bulk preview generation
-- `GET /api/preview/pregenerate`: Bulk preview generation status
-- `GET /api/status/<path>`: Generation status for thumbnail/preview/scrub
-- `GET /api/status/all`: Aggregate generation status for all indexed videos
-- `GET /api/subtitle/<path>/<track_id>.vtt`: Cached/extracted subtitle track
-- `GET /api/scrub/<path>/metadata`: Scrub metadata JSON
-- `GET /api/scrub/<path>/sprite/<sheet>.jpg`: Scrub sprite sheet
-- `POST /api/scrub/pregenerate`: Start bulk scrub generation
-- `GET /api/scrub/pregenerate`: Bulk scrub generation status
+Pages and static assets:
+- `GET /`: Main app shell.
+- `GET /login`: Login page (when auth is enabled).
+- `GET /logout`: Clear auth session.
+- `GET /favicon.ico`
+- `GET /apple-touch-icon.png`
+- `GET /site.webmanifest`
 
-## Generation Behavior
+Catalog and indexing:
+- `GET /api/browse`: Folder tree, files, indexing state, ffmpeg availability.
+- `POST /api/reindex`: Force a fresh catalog scan.
 
-- Thumbnail generation is triggered when library items are loaded.
-- Preview generation is on demand (video card preview/open playback) or via bulk action.
-- Scrub generation is on demand (scrub metadata/sprite access) or via bulk action.
-- Jobs panel actions:
-  - Generate All Previews
-  - Generate All Scrubbing
-- Jobs panel displays per-item state and aggregate counts from /api/status/all.
+Playback and artifacts:
+- `GET /api/video/<path:rel_path>`: Stream original video file.
+- `GET /api/thumbnail/<path:rel_path>`: Return thumbnail or `202` while queued.
+- `GET /api/preview/<path:rel_path>`: Return preview MP4 (generates if missing).
+- `GET /api/subtitle/<path:rel_path>/<track_id>.vtt`: Return cached/generated subtitle track.
 
-## Caching Behavior
+Scrub previews:
+- `GET /api/scrub/<path:rel_path>/metadata`: Scrub metadata JSON.
+- `GET /api/scrub/<path:rel_path>/sprite/<int:sheet_index>.jpg`: Scrub sprite sheet image.
+- `POST /api/scrub/pregenerate`: Start bulk scrub generation.
+- `GET /api/scrub/pregenerate`: Bulk scrub job status.
 
-Generated artifacts are stored under `DATA_FOLDER`:
-- `thumbnails/`
-- `previews/`
-- `subtitles/`
-- `scrubbing/`
+Preview bulk generation:
+- `POST /api/preview/pregenerate`: Start bulk preview generation.
+- `GET /api/preview/pregenerate`: Bulk preview job status.
 
-Files are regenerated when source files are newer than cache outputs.
+Generation status and maintenance:
+- `GET /api/status/<path:rel_path>`: Per-video generation states.
+- `GET /api/status/all`: Global generation summary + job states.
+- `POST /api/data/cleanup`: Remove orphaned cached files/directories for missing source videos.
+
+All `/api/*` routes require authentication when password mode is enabled.
+
+## Generation and Cache Layout
+
+Generated files are stored under `DATA_FOLDER` using a per-video directory that mirrors source paths.
+
+For a source video at `<VIDEO_FOLDER>/Movies/Example.mp4`, cache files are written to:
+
+```text
+<DATA_FOLDER>/Movies/Example.mp4/thumbnail.jpg
+<DATA_FOLDER>/Movies/Example.mp4/preview.mp4
+<DATA_FOLDER>/Movies/Example.mp4/subtitles/<track>.vtt
+<DATA_FOLDER>/Movies/Example.mp4/scrubbing/metadata.json
+<DATA_FOLDER>/Movies/Example.mp4/scrubbing/sheet_0000.jpg
+```
+
+Artifacts are considered stale and regenerated when source files are newer.
+
+## Authentication Behavior
+
+- Login is session-based using Flask secure cookies.
+- Session persistence is controlled by `APP_SESSION_REMEMBER_DAYS`.
+- When auth is disabled, login is bypassed and all routes are directly accessible.
 
 ## Development Notes
 
-- Backend uses thread pools for generation jobs.
-- Catalog refresh is throttled to reduce repeated expensive scans.
-- Frontend uses Plyr for playback and fullscreen controls.
-- Preview and scrub artifacts are generated on demand or via manual bulk generation.
+- Startup attempts to load the previous catalog snapshot before background reindex begins.
+- Preview generation uses sampled segments to build a short highlight clip and uses CPU fallback if GPU pipelines fail.
+- Scrub metadata payloads are normalized on read to keep legacy data compatible.
