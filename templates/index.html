@@ -137,6 +137,20 @@
             transform: translateY(-1px);
         }
 
+        .logout-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+
+        .logout-btn svg {
+            display: block;
+            width: 20px;
+            height: 20px;
+            pointer-events: none;
+        }
+
         .topbar-status {
             color: var(--muted);
             font-size: 0.92rem;
@@ -230,6 +244,18 @@
             overflow-y: auto;
             background: rgba(3, 8, 10, 0.65);
             backdrop-filter: blur(5px);
+            min-width: 0;
+            transform: translateX(0);
+            transition: transform 180ms ease, padding 180ms ease, border-color 180ms ease;
+        }
+
+        .app-shell.sidebar-collapsed .sidebar {
+            transform: translateX(-100%);
+            padding-left: 0;
+            padding-right: 0;
+            border-right-color: transparent;
+            overflow: hidden;
+            pointer-events: none;
         }
 
         .sidebar-backdrop {
@@ -637,9 +663,30 @@
         .sort-dir-btn {
             width: 40px;
             height: 40px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 40px;
             cursor: pointer;
             font-size: 1rem;
             line-height: 1;
+        }
+
+        .sort-dir-btn[hidden] {
+            display: none !important;
+        }
+
+        .shuffle-icon {
+            display: block;
+            width: 18px;
+            height: 18px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            pointer-events: none;
         }
 
         .randomize-btn {
@@ -927,6 +974,155 @@
             min-height: 0;
         }
 
+        .player-nav-btn {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 44px;
+            height: 44px;
+            border: 1px solid rgba(141, 208, 197, 0.45);
+            border-radius: 999px;
+            background: rgba(6, 12, 15, 0.68);
+            color: #e7fff7;
+            font-size: 1.2rem;
+            line-height: 1;
+            cursor: pointer;
+            z-index: 6;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 120ms ease, background-color 120ms ease, border-color 120ms ease;
+        }
+
+        .player-nav-btn:hover:not(:disabled) {
+            background: rgba(17, 32, 37, 0.85);
+            border-color: rgba(141, 208, 197, 0.75);
+        }
+
+        .player-nav-btn:disabled {
+            opacity: 0.35;
+            cursor: default;
+        }
+
+        .player-auto-next {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 6;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(141, 208, 197, 0.45);
+            background: rgba(6, 12, 15, 0.68);
+            color: #e7fff7;
+            font-size: 0.74rem;
+            line-height: 1;
+            cursor: pointer;
+            transition: opacity 120ms ease, background-color 120ms ease, border-color 120ms ease;
+            user-select: none;
+        }
+
+        .player-auto-next:hover {
+            background: rgba(17, 32, 37, 0.85);
+            border-color: rgba(141, 208, 197, 0.75);
+        }
+
+        .player-auto-next input {
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .player-auto-next-slider {
+            position: relative;
+            width: 34px;
+            height: 18px;
+            border-radius: 999px;
+            background: rgba(90, 216, 184, 0.2);
+            border: 1px solid rgba(141, 208, 197, 0.35);
+            transition: background-color 120ms ease, border-color 120ms ease;
+        }
+
+        .player-auto-next-slider::after {
+            content: "";
+            position: absolute;
+            top: 1px;
+            left: 1px;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #dffbf3;
+            transition: transform 120ms ease;
+        }
+
+        .player-auto-next input:checked + .player-auto-next-slider {
+            background: rgba(90, 216, 184, 0.55);
+            border-color: rgba(141, 208, 197, 0.85);
+        }
+
+        .player-auto-next input:checked + .player-auto-next-slider::after {
+            transform: translateX(16px);
+        }
+
+        .player-fullscreen-title {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            right: 120px;
+            z-index: 6;
+            display: none;
+            padding: 6px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(141, 208, 197, 0.45);
+            background: rgba(6, 12, 15, 0.68);
+            color: #e7fff7;
+            font-size: 0.8rem;
+            line-height: 1.25;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 120ms ease;
+        }
+
+        .player-shell.is-fullscreen .player-fullscreen-title {
+            display: block;
+            opacity: 1;
+        }
+
+        .player-shell.is-fullscreen.nav-controls-hidden .player-fullscreen-title {
+            opacity: 0;
+        }
+
+        .player-shell.nav-controls-hidden .player-nav-btn {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .player-shell.nav-controls-hidden .player-auto-next {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .player-shell.nav-controls-hidden.is-playing,
+        .player-shell.nav-controls-hidden.is-playing .plyr,
+        .player-shell.nav-controls-hidden.is-playing .plyr *,
+        .player-shell.nav-controls-hidden.is-playing video {
+            cursor: none;
+        }
+
+        .player-nav-prev {
+            left: 12px;
+        }
+
+        .player-nav-next {
+            right: 12px;
+        }
+
         .plyr {
             width: 100%;
             height: 100%;
@@ -1097,12 +1293,11 @@
                 width: 100%;
             }
 
-            #sortDirBtn {
-                width: 40px;
-            }
-
+            #sortDirBtn,
             #rerandomizeBtn {
-                min-width: 92px;
+                width: 40px;
+                height: 40px;
+                min-width: 40px;
             }
 
             .app-shell.sidebar-open .sidebar {
@@ -1163,6 +1358,26 @@
                 margin-inline: auto;
             }
 
+            .player-nav-btn {
+                width: 40px;
+                height: 40px;
+            }
+
+            .player-auto-next {
+                top: 8px;
+                right: 8px;
+                padding: 5px 8px;
+                font-size: 0.7rem;
+            }
+
+            .player-nav-prev {
+                left: 8px;
+            }
+
+            .player-nav-next {
+                right: 8px;
+            }
+
             .generation-summary {
                 grid-template-columns: 1fr;
             }
@@ -1220,8 +1435,9 @@
             }
 
             #rerandomizeBtn {
-                grid-column: 1 / -1;
-                width: 100%;
+                grid-column: auto;
+                width: 40px;
+                min-width: 40px;
             }
 
             .video-grid {
@@ -1304,6 +1520,13 @@
                 >
                     Jobs
                 </button>
+                <button class="toggle-btn logout-btn" id="logoutBtn" title="Logout" aria-label="Logout" type="button">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                        <polyline points="16 17 21 12 16 7"></polyline>
+                        <line x1="21" y1="12" x2="9" y2="12"></line>
+                    </svg>
+                </button>
             </div>
         </header>
 
@@ -1336,7 +1559,11 @@
                     <option value="random" selected>Random</option>
                 </select>
                 <button id="sortDirBtn" class="sort-dir-btn" type="button" aria-label="Reverse sort direction">↑</button>
-                <button id="rerandomizeBtn" class="sort-dir-btn randomize-btn" type="button" title="Re-randomize video order" hidden>Shuffle</button>
+                <button id="rerandomizeBtn" class="sort-dir-btn" type="button" title="Re-randomize video order" aria-label="Re-randomize video order" hidden>
+                    <svg class="shuffle-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 4l3 3-3 3 M4 17h3c4 0 6-10 10-10h3 M17 14l3 3-3 3 M4 7h3c4 0 6 10 10 10h3" />
+                    </svg>
+                </button>
                 <select id="itemSizeSelect" class="sort-select item-size-select" aria-label="Item size">
                     <option value="xs">Size XS</option>
                     <option value="sm" selected>Size S</option>
@@ -1394,6 +1621,14 @@
             </div>
         </div>
         <div class="player-shell" id="playerShell">
+            <button type="button" class="player-nav-btn player-nav-prev" id="dialogPrev" aria-label="Previous video">&lt;</button>
+            <button type="button" class="player-nav-btn player-nav-next" id="dialogNext" aria-label="Next video">&gt;</button>
+            <label class="player-auto-next" for="autoNextToggle">
+                <input type="checkbox" id="autoNextToggle" />
+                <span class="player-auto-next-slider" aria-hidden="true"></span>
+                <span>Auto Play</span>
+            </label>
+            <div class="player-fullscreen-title" id="fullscreenTitle" aria-hidden="true"></div>
             <video id="dialogPlayer" class="player" controls playsinline preload="metadata"></video>
             <div class="hold-speed-indicator" id="holdSpeedIndicator" aria-hidden="true">2x speed</div>
             <div class="seek-toast" id="seekToast"></div>
@@ -1408,6 +1643,7 @@
 
     <script>
         const appShell = document.getElementById("appShell");
+        const logoutBtnEl = document.getElementById("logoutBtn");
         const toggleSidebarBtn = document.getElementById("toggleSidebar");
         const toggleGenerationPanelBtn = document.getElementById("toggleGenerationPanel");
         const closeGenerationPanelBtn = document.getElementById("closeGenerationPanel");
@@ -1437,6 +1673,10 @@
         const dialogTitleEl = document.getElementById("dialogTitle");
         const dialogPlayerEl = document.getElementById("dialogPlayer");
         const playerShellEl = document.getElementById("playerShell");
+        const fullscreenTitleEl = document.getElementById("fullscreenTitle");
+        const dialogPrevBtn = document.getElementById("dialogPrev");
+        const dialogNextBtn = document.getElementById("dialogNext");
+        const autoNextToggleEl = document.getElementById("autoNextToggle");
         const holdSpeedIndicatorEl = document.getElementById("holdSpeedIndicator");
         const seekToastEl = document.getElementById("seekToast");
         const scrubPreviewEl = document.getElementById("scrubPreview");
@@ -1489,6 +1729,11 @@
             scrubProgressEl: null,
             scrubListeners: null,
             lastLibrarySignature: "",
+            folderExpansionInitialized: false,
+            dialogPlaylist: [],
+            dialogPlaylistIndex: -1,
+            dialogCurrentPath: "",
+            autoNextEnabled: false,
         };
 
         const THUMBNAIL_MAX_RETRIES = 8;
@@ -1502,6 +1747,7 @@
         const ITEM_SIZE_STORAGE_KEY = "vrest.item.size";
         const ITEM_SIZE_MOBILE_STORAGE_KEY = "vrest.item.size.mobile";
         const PREVIEW_MODE_STORAGE_KEY = "vrest.preview.mode.enabled";
+        const AUTO_NEXT_STORAGE_KEY = "vrest.player.auto.next";
         const ITEM_SIZE_PRESETS = {
             xs: 180,
             sm: 220,
@@ -1555,6 +1801,9 @@
             }
         }
 
+        logoutBtnEl.addEventListener("click", () => {
+            window.location.assign("/logout");
+        });
         toggleSidebarBtn.addEventListener("click", toggleSidebar);
         toggleGenerationPanelBtn.addEventListener("click", toggleGenerationPanel);
         closeGenerationPanelBtn.addEventListener("click", closeGenerationPanel);
@@ -1586,6 +1835,24 @@
         dialogEl.addEventListener("cancel", (event) => {
             event.preventDefault();
         });
+        dialogPrevBtn.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            openAdjacentDialogVideo(-1);
+        });
+        dialogNextBtn.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            openAdjacentDialogVideo(1);
+        });
+        autoNextToggleEl.addEventListener("change", () => {
+            setAutoNextEnabled(autoNextToggleEl.checked);
+            saveAutoNextPreference();
+        });
+        dialogPlayerEl.addEventListener("play", () => setPlayerPlaybackState(true));
+        dialogPlayerEl.addEventListener("pause", () => setPlayerPlaybackState(false));
+        dialogPlayerEl.addEventListener("ended", maybeAutoAdvanceToNext);
+        dialogPlayerEl.addEventListener("ended", () => setPlayerPlaybackState(false));
 
         function initProPlayer() {
             if (typeof window.Plyr !== "function") {
@@ -1640,9 +1907,26 @@
                 });
             };
 
-            plyrPlayer.on("ready", refreshScrubProgressBinding);
-            plyrPlayer.on("enterfullscreen", refreshScrubProgressBinding);
-            plyrPlayer.on("exitfullscreen", refreshScrubProgressBinding);
+            plyrPlayer.on("ready", () => {
+                refreshScrubProgressBinding();
+                setDialogNavControlsVisible(true);
+                setPlayerFullscreenMode(Boolean(plyrPlayer?.fullscreen?.active));
+            });
+            plyrPlayer.on("enterfullscreen", () => {
+                setPlayerFullscreenMode(true);
+                refreshScrubProgressBinding();
+            });
+            plyrPlayer.on("exitfullscreen", () => {
+                setPlayerFullscreenMode(false);
+                setDialogNavControlsVisible(true);
+                refreshScrubProgressBinding();
+            });
+            plyrPlayer.on("controlsshown", () => setDialogNavControlsVisible(true));
+            plyrPlayer.on("controlshidden", () => setDialogNavControlsVisible(false));
+            plyrPlayer.on("play", () => setPlayerPlaybackState(true));
+            plyrPlayer.on("pause", () => setPlayerPlaybackState(false));
+            plyrPlayer.on("ended", () => setPlayerPlaybackState(false));
+            plyrPlayer.on("ended", maybeAutoAdvanceToNext);
         }
 
         function showSeekToast(text) {
@@ -1709,6 +1993,13 @@
             return dialogPlayerEl.play();
         }
 
+        function playPlayerImmediately() {
+            const playAttempt = playPlayer();
+            if (playAttempt && typeof playAttempt.catch === "function") {
+                playAttempt.catch(() => {});
+            }
+        }
+
         function pausePlayer() {
             if (plyrPlayer) {
                 plyrPlayer.pause();
@@ -1733,15 +2024,130 @@
             holdSpeedIndicatorEl.textContent = `${labelRate}x speed`;
         }
 
+        function setAutoNextEnabled(enabled) {
+            state.autoNextEnabled = Boolean(enabled);
+            autoNextToggleEl.checked = state.autoNextEnabled;
+        }
+
+        function resolveDialogPlaylistIndexFromCurrentPath() {
+            if (state.dialogPlaylistIndex >= 0) {
+                return state.dialogPlaylistIndex;
+            }
+
+            const currentPath = String(state.dialogCurrentPath || "");
+            if (!currentPath) {
+                return -1;
+            }
+
+            state.dialogPlaylistIndex = state.dialogPlaylist.findIndex(
+                (video) => String(video?.path || "") === currentPath
+            );
+            return state.dialogPlaylistIndex;
+        }
+
+        function maybeAutoAdvanceToNext() {
+            if (!dialogEl.open || !state.autoNextEnabled) {
+                return;
+            }
+
+            const playlistLength = state.dialogPlaylist.length;
+            if (playlistLength <= 1) {
+                return;
+            }
+
+            resolveDialogPlaylistIndexFromCurrentPath();
+            openAdjacentDialogVideo(1);
+        }
+
+        function saveAutoNextPreference() {
+            try {
+                window.localStorage.setItem(
+                    AUTO_NEXT_STORAGE_KEY,
+                    state.autoNextEnabled ? "1" : "0"
+                );
+            } catch (error) {
+                // Ignore storage errors (privacy mode, blocked storage, etc.)
+            }
+        }
+
+        function loadAutoNextPreference() {
+            let savedAutoNext = null;
+
+            try {
+                savedAutoNext = window.localStorage.getItem(AUTO_NEXT_STORAGE_KEY);
+            } catch (error) {
+                // Ignore storage errors and keep default.
+            }
+
+            setAutoNextEnabled(savedAutoNext === "1");
+        }
+
         function shouldIgnoreHoldTarget(target) {
             if (!(target instanceof Element)) {
                 return false;
             }
             return Boolean(
                 target.closest(
-                    ".plyr__controls, .plyr__menu, .plyr__control, .plyr__progress, .plyr__volume, .dialog-head, .dialog-tools, .dialog-close"
+                    ".plyr__controls, .plyr__menu, .plyr__control, .plyr__progress, .plyr__volume, .dialog-head, .dialog-tools, .dialog-close, .player-nav-btn, .player-auto-next"
                 )
             );
+        }
+
+        function syncDialogPlaylist(meta, preserveCurrentPlaylist = false) {
+            if (!preserveCurrentPlaylist) {
+                const visible = getVisibleVideos();
+                state.dialogPlaylist = Array.isArray(visible) ? visible.slice() : [];
+            }
+
+            const currentPath = String(meta?.path || "");
+            state.dialogPlaylistIndex = state.dialogPlaylist.findIndex(
+                (video) => String(video?.path || "") === currentPath
+            );
+        }
+
+        function updateDialogNavButtons() {
+            const playlistLength = state.dialogPlaylist.length;
+            const hasSelection = state.dialogPlaylistIndex >= 0;
+            const canLoopNavigate = hasSelection && playlistLength > 1;
+
+            dialogPrevBtn.disabled = !canLoopNavigate;
+            dialogNextBtn.disabled = !canLoopNavigate;
+        }
+
+        function openAdjacentDialogVideo(offset) {
+            const delta = Number(offset);
+            if (!Number.isFinite(delta) || delta === 0) {
+                return;
+            }
+
+            const playlistLength = state.dialogPlaylist.length;
+            if (state.dialogPlaylistIndex < 0 || playlistLength <= 1) {
+                updateDialogNavButtons();
+                return;
+            }
+
+            const targetIndex =
+                ((state.dialogPlaylistIndex + delta) % playlistLength + playlistLength) %
+                playlistLength;
+
+            const targetVideo = state.dialogPlaylist[targetIndex];
+            if (!targetVideo) {
+                return;
+            }
+
+            openVideoDialog(targetVideo, { preserveCurrentPlaylist: true });
+        }
+
+        function setDialogNavControlsVisible(visible) {
+            playerShellEl.classList.toggle("nav-controls-hidden", !visible);
+        }
+
+        function setPlayerPlaybackState(isPlaying) {
+            playerShellEl.classList.toggle("is-playing", Boolean(isPlaying));
+        }
+
+        function setPlayerFullscreenMode(active) {
+            playerShellEl.classList.toggle("is-fullscreen", Boolean(active));
         }
 
         function startHoldSpeed(event) {
@@ -1845,6 +2251,9 @@
         }
 
         playerShellEl.addEventListener("dblclick", (event) => {
+            if (shouldIgnoreHoldTarget(event.target)) {
+                return;
+            }
             event.preventDefault();
             event.stopPropagation();
             const side = gestureSideFromClientX(event.clientX);
@@ -1859,6 +2268,9 @@
         playerShellEl.addEventListener(
             "touchend",
             (event) => {
+                if (shouldIgnoreHoldTarget(event.target)) {
+                    return;
+                }
                 if (!event.changedTouches || !event.changedTouches.length) {
                     return;
                 }
@@ -1931,11 +2343,20 @@
             { passive: true, capture: true }
         );
 
-        async function openVideoDialog(meta) {
+        async function openVideoDialog(meta, options = {}) {
             const videoSrc = `/api/video/${encodePath(meta.path)}`;
             const subtitleTracks = buildSubtitleTracks(meta);
+            const preserveCurrentPlaylist = Boolean(options.preserveCurrentPlaylist);
+            state.dialogCurrentPath = String(meta?.path || "");
 
-            dialogTitleEl.textContent = fileTitle(meta.name);
+            syncDialogPlaylist(meta, preserveCurrentPlaylist);
+            updateDialogNavButtons();
+            setDialogNavControlsVisible(true);
+            setPlayerPlaybackState(false);
+
+            const title = fileTitle(meta.name);
+            dialogTitleEl.textContent = title;
+            fullscreenTitleEl.textContent = title;
 
             if (plyrPlayer) {
                 plyrPlayer.source = {
@@ -1952,7 +2373,10 @@
                 dialogPlayerEl.load();
             }
 
-            dialogEl.showModal();
+            if (!dialogEl.open) {
+                dialogEl.showModal();
+            }
+            playPlayerImmediately();
             bindScrubPreviewToProgress();
             loadScrubMetadataForVideo(meta.path);
         }
@@ -1973,6 +2397,13 @@
                 clearNativeTracks();
                 dialogPlayerEl.load();
             }
+            state.dialogPlaylist = [];
+            state.dialogPlaylistIndex = -1;
+            state.dialogCurrentPath = "";
+            updateDialogNavButtons();
+            setDialogNavControlsVisible(true);
+            setPlayerPlaybackState(false);
+            setPlayerFullscreenMode(false);
             dialogEl.close();
             window.requestAnimationFrame(() => {
                 resumeVisiblePreviewsInPreviewMode();
@@ -2035,6 +2466,21 @@
 
         function fileTitle(name) {
             return name.replace(/\.[^/.]+$/, "");
+        }
+
+        function collectFolderPaths(node, bucket = new Set()) {
+            if (!node) {
+                return bucket;
+            }
+
+            bucket.add(String(node.path || ""));
+
+            const childFolders = Array.isArray(node.folders) ? node.folders : [];
+            for (const child of childFolders) {
+                collectFolderPaths(child, bucket);
+            }
+
+            return bucket;
         }
 
         function formatDuration(seconds) {
@@ -2340,6 +2786,14 @@
                 return true;
             }
 
+            const searchTerms = query
+                .split(",")
+                .map((term) => term.trim())
+                .filter(Boolean);
+            if (!searchTerms.length) {
+                return true;
+            }
+
             const haystacks = [
                 String(fileTitle(video.name || "")).toLowerCase(),
                 String(video.name || "").toLowerCase(),
@@ -2347,7 +2801,9 @@
                 String(video.path || "").toLowerCase(),
             ];
 
-            return haystacks.some((value) => value.includes(query));
+            return searchTerms.some((term) =>
+                haystacks.some((value) => value.includes(term))
+            );
         }
 
         function videoSortIdentity(video) {
@@ -3365,6 +3821,10 @@
                     state.lastLibrarySignature = signature;
                     state.root = payload.root;
                     state.videos = payload.files || [];
+                    if (!state.folderExpansionInitialized) {
+                        state.expandedFolders = collectFolderPaths(state.root);
+                        state.folderExpansionInitialized = true;
+                    }
                 }
 
                 const isIndexing = Boolean(payload.indexing);
@@ -3482,6 +3942,7 @@
         loadSortPreferences();
         loadItemSizePreference();
         loadPreviewModePreference();
+        loadAutoNextPreference();
         updateSearchClearButton();
         updateSortDirectionButton();
         initProPlayer();

@@ -1906,9 +1906,6 @@ def require_authentication():
     if request.path.startswith("/static/"):
         return None
 
-    if request.path.startswith("/api/thumbnail/") or request.path.startswith("/api/preview/"):
-        return None
-
     if is_authenticated():
         return None
 
