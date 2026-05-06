@@ -1724,6 +1724,15 @@
             holdSpeedIndicatorEl.classList.toggle("visible", Boolean(visible));
         }
 
+        function setHoldSpeedIndicatorRate(rate) {
+            if (!holdSpeedIndicatorEl) {
+                return;
+            }
+            const normalizedRate = Number(rate);
+            const labelRate = Number.isFinite(normalizedRate) ? normalizedRate : 2;
+            holdSpeedIndicatorEl.textContent = `${labelRate}x speed`;
+        }
+
         function shouldIgnoreHoldTarget(target) {
             if (!(target instanceof Element)) {
                 return false;
@@ -1751,7 +1760,9 @@
                 event.pointerId !== undefined ? event.pointerId : null;
             holdSpeedState.previousRate = getCurrentPlaybackRate();
             holdSpeedState.wasPausedBeforeHold = isPlayerPaused();
-            setPlaybackRate(2);
+            const holdSpeedTarget = holdSpeedState.previousRate >= 2 ? 3 : 2;
+            setHoldSpeedIndicatorRate(holdSpeedTarget);
+            setPlaybackRate(holdSpeedTarget);
             setHoldSpeedIndicatorVisible(true);
 
             if (holdSpeedState.wasPausedBeforeHold) {
@@ -1963,6 +1974,9 @@
                 dialogPlayerEl.load();
             }
             dialogEl.close();
+            window.requestAnimationFrame(() => {
+                resumeVisiblePreviewsInPreviewMode();
+            });
         }
 
         function encodePath(path) {
@@ -2853,6 +2867,23 @@
                 candidate.dataset.previewActive = "false";
                 candidate.dataset.previewToken = "";
                 clearPreview(candidate);
+            });
+        }
+
+        function resumeVisiblePreviewsInPreviewMode() {
+            if (!state.previewModeEnabled) {
+                return;
+            }
+
+            state.cards.forEach((card) => {
+                if (card.dataset.previewInView !== "true") {
+                    return;
+                }
+                const meta = state.cardMeta.get(card);
+                if (!meta) {
+                    return;
+                }
+                activatePreview(card, meta);
             });
         }
 

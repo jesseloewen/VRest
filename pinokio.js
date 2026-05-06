@@ -2,7 +2,7 @@ module.exports = {
   version: "1.0",
   title: "VRest - Video Browser",
   description: "Flask video browser with previews and streaming.",
-  icon: "",
+  icon: "icon.png",
   menu: async (kernel, info) => {
     const installed = info.exists("venv") && info.exists("requirements.txt");
     const running = {
