@@ -1243,6 +1243,15 @@
                 gap: 6px;
             }
 
+            .preview-mode-toggle {
+                min-width: 0;
+                padding: 0 6px;
+            }
+
+            .preview-mode-text {
+                display: none;
+            }
+
             .brand {
                 font-size: 1.55rem;
             }
@@ -1278,7 +1287,7 @@
 
             .library-tools {
                 display: grid;
-                grid-template-columns: minmax(0, 1fr) auto auto auto;
+                grid-template-columns: minmax(0, 1fr) auto;
                 gap: 6px;
             }
 
@@ -1293,11 +1302,24 @@
                 width: 100%;
             }
 
+            #sortSelect {
+                grid-column: 1;
+                grid-row: 2;
+            }
+
             #sortDirBtn,
             #rerandomizeBtn {
+                grid-column: 2;
+                grid-row: 2;
                 width: 40px;
                 height: 40px;
                 min-width: 40px;
+            }
+
+            #itemSizeSelect {
+                grid-column: 1 / -1;
+                grid-row: 3;
+                width: 100%;
             }
 
             .app-shell.sidebar-open .sidebar {
@@ -1422,20 +1444,11 @@
                 font-size: 0.72rem;
             }
 
-            .preview-mode-text {
-                font-size: 0.72rem;
-            }
-
             .main {
                 padding: 10px 10px 20px;
             }
 
-            .library-tools {
-                grid-template-columns: minmax(0, 1fr) auto auto;
-            }
-
             #rerandomizeBtn {
-                grid-column: auto;
                 width: 40px;
                 min-width: 40px;
             }
@@ -1466,6 +1479,41 @@
                 padding: 0 7px;
             }
 
+            .topbar {
+                padding: 0 6px;
+            }
+
+            .topbar-left {
+                gap: 6px;
+            }
+
+            .topbar-right {
+                gap: 4px;
+            }
+
+            .brand-icon {
+                width: 30px;
+                height: 30px;
+                border-radius: 7px;
+            }
+
+            .preview-mode-toggle {
+                padding: 0 5px;
+            }
+
+            #reindexBtn {
+                width: 36px;
+                min-width: 36px;
+                padding: 0;
+                font-size: 0;
+            }
+
+            #reindexBtn::before {
+                content: "↻";
+                font-size: 1rem;
+                line-height: 1;
+            }
+
             .preview-mode-switch {
                 width: 34px;
                 height: 20px;
@@ -1478,6 +1526,69 @@
 
             .preview-mode-input:checked + .preview-mode-switch::after {
                 transform: translateX(14px);
+            }
+
+            .library-tools {
+                gap: 8px;
+            }
+
+            .library-tools .sort-select {
+                min-height: 38px;
+            }
+
+            #sortDirBtn,
+            #rerandomizeBtn {
+                justify-self: end;
+            }
+        }
+
+        @media (max-width: 360px) {
+            .topbar {
+                padding: 0 4px;
+            }
+
+            .toggle-btn,
+            .sort-dir-btn,
+            .generation-toggle-btn,
+            .preview-mode-toggle,
+            .topbar-right .randomize-btn,
+            #reindexBtn {
+                width: 34px;
+                min-width: 34px;
+                height: 34px;
+                padding: 0;
+            }
+
+            .preview-mode-switch {
+                width: 32px;
+                height: 18px;
+            }
+
+            .preview-mode-switch::after {
+                width: 12px;
+                height: 12px;
+            }
+
+            .preview-mode-input:checked + .preview-mode-switch::after {
+                transform: translateX(14px);
+            }
+
+            .main {
+                padding: 8px 8px 16px;
+            }
+
+            .video-grid {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+
+            .player-auto-next {
+                gap: 6px;
+                padding: 4px 7px;
+            }
+
+            .player-auto-next span:last-child {
+                display: none;
             }
         }
 
