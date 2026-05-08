@@ -12,7 +12,7 @@ import tempfile
 import threading
 import time
 from datetime import datetime, timedelta, timezone
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 from typing import Dict, List, Optional, Tuple
 
@@ -88,6 +88,17 @@ LEGACY_THUMBNAIL_ROOT = DATA_ROOT / "thumbnails"
 LEGACY_PREVIEW_ROOT = DATA_ROOT / "previews"
 LEGACY_SUBTITLE_ROOT = DATA_ROOT / "subtitles"
 LEGACY_SCRUB_ROOT = DATA_ROOT / "scrubbing"
+
+DATA_DELETE_KIND_ALIASES = {
+    "thumbnail": "thumbnail",
+    "thumbnails": "thumbnail",
+    "preview": "preview",
+    "previews": "preview",
+    "scrub": "scrub",
+    "scrubbing": "scrub",
+    "subtitle": "subtitle",
+    "subtitles": "subtitle",
+}
 
 FFMPEG_AVAILABLE = subprocess.call(
     ["where" if os.name == "nt" else "which", "ffmpeg"],
@@ -264,6 +275,10 @@ generation_status: Dict[str, Dict[str, str]] = {}
 thumbnail_executor = ThreadPoolExecutor(max_workers=THUMBNAIL_MAX_WORKERS)
 preview_executor = ThreadPoolExecutor(max_workers=PREVIEW_MAX_WORKERS)
 scrub_executor = ThreadPoolExecutor(max_workers=SCRUB_MAX_WORKERS)
+preview_generation_lock = threading.Lock()
+preview_generation_futures: Dict[str, Future] = {}
+scrub_generation_lock = threading.Lock()
+scrub_generation_futures: Dict[str, Future] = {}
 
 SCRUB_INTERVAL_SECONDS = 10
 SCRUB_TILE_COLUMNS = 10
@@ -606,6 +621,197 @@ def cleanup_orphaned_data_files() -> Dict[str, int]:
         for key in stale_subtitle_keys:
             subtitle_index.pop(key, None)
         result["subtitleIndexRemoved"] = len(stale_subtitle_keys)
+
+    return result
+
+
+def normalize_data_delete_kind(kind: str) -> Optional[str]:
+    return DATA_DELETE_KIND_ALIASES.get(str(kind or "").strip().lower())
+
+
+def _delete_file_for_result(path: Path, result: Dict[str, int], counter_key: str) -> None:
+    if not path.is_file():
+        return
+    try:
+        path.unlink()
+    except OSError:
+        return
+    result[counter_key] += 1
+    result["filesDeleted"] += 1
+
+
+def _delete_directory_for_result(path: Path, result: Dict[str, int], counter_key: str) -> None:
+    if not path.is_dir():
+        return
+    try:
+        shutil.rmtree(path)
+    except OSError:
+        return
+    result[counter_key] += 1
+    result["directoriesDeleted"] += 1
+
+
+def delete_cached_data_by_type(kind: str) -> Dict[str, object]:
+    normalized_kind = normalize_data_delete_kind(kind)
+    if normalized_kind is None:
+        raise ValueError("unsupported data type")
+
+    result: Dict[str, object] = {
+        "kind": normalized_kind,
+        "filesDeleted": 0,
+        "directoriesDeleted": 0,
+        "thumbnailsDeleted": 0,
+        "previewsDeleted": 0,
+        "subtitlesDeleted": 0,
+        "scrubMetadataDeleted": 0,
+        "scrubSpritesDeleted": 0,
+        "generationStatusUpdated": 0,
+    }
+
+    if normalized_kind == "thumbnail":
+        for thumb_path in DATA_ROOT.rglob("thumbnail.jpg"):
+            _delete_file_for_result(thumb_path, result, "thumbnailsDeleted")
+
+        if LEGACY_THUMBNAIL_ROOT.exists():
+            for thumb_path in LEGACY_THUMBNAIL_ROOT.rglob("*.jpg"):
+                _delete_file_for_result(thumb_path, result, "thumbnailsDeleted")
+
+    elif normalized_kind == "preview":
+        for preview_path in DATA_ROOT.rglob("preview.mp4"):
+            _delete_file_for_result(preview_path, result, "previewsDeleted")
+
+        if LEGACY_PREVIEW_ROOT.exists():
+            for preview_path in LEGACY_PREVIEW_ROOT.rglob("*.mp4"):
+                _delete_file_for_result(preview_path, result, "previewsDeleted")
+
+    elif normalized_kind == "subtitle":
+        for subtitle_path in DATA_ROOT.rglob("*.vtt"):
+            if not subtitle_path.is_file():
+                continue
+            is_new_layout_subtitle = (
+                _new_layout_video_rel_path(subtitle_path, expected_parent="subtitles") is not None
+            )
+            try:
+                subtitle_path.relative_to(LEGACY_SUBTITLE_ROOT)
+                is_legacy_subtitle = True
+            except ValueError:
+                is_legacy_subtitle = False
+            if is_new_layout_subtitle or is_legacy_subtitle:
+                _delete_file_for_result(subtitle_path, result, "subtitlesDeleted")
+
+    elif normalized_kind == "scrub":
+        for metadata_path in DATA_ROOT.rglob("metadata.json"):
+            rel_video = _new_layout_video_rel_path(
+                metadata_path,
+                expected_name="metadata.json",
+                expected_parent="scrubbing",
+            )
+            if rel_video:
+                _delete_file_for_result(metadata_path, result, "scrubMetadataDeleted")
+
+        for sprite_path in DATA_ROOT.rglob("sheet_*.jpg"):
+            rel_video = _new_layout_video_rel_path(sprite_path, expected_parent="scrubbing")
+            if rel_video:
+                _delete_file_for_result(sprite_path, result, "scrubSpritesDeleted")
+
+        if LEGACY_SCRUB_ROOT.exists():
+            for metadata_path in LEGACY_SCRUB_ROOT.rglob("*.json"):
+                _delete_file_for_result(metadata_path, result, "scrubMetadataDeleted")
+
+            for sprite_dir in LEGACY_SCRUB_ROOT.rglob("*.sprites"):
+                _delete_directory_for_result(sprite_dir, result, "scrubSpritesDeleted")
+
+    if normalized_kind in {"thumbnail", "preview", "scrub"}:
+        status_key = normalized_kind
+        updated = 0
+        with generation_lock:
+            for status in generation_status.values():
+                if status.get(status_key) != "missing":
+                    status[status_key] = "missing"
+                    updated += 1
+        result["generationStatusUpdated"] = updated
+
+    for cache_root in (
+        DATA_ROOT,
+        LEGACY_THUMBNAIL_ROOT,
+        LEGACY_PREVIEW_ROOT,
+        LEGACY_SUBTITLE_ROOT,
+        LEGACY_SCRUB_ROOT,
+    ):
+        if cache_root.exists():
+            result["directoriesDeleted"] += _prune_empty_dirs(cache_root)
+
+    return result
+
+
+def delete_cached_data_for_video(rel_path: str) -> Dict[str, object]:
+    normalized = normalize_rel_path(rel_path)
+    video_data_root = DATA_ROOT / normalized
+    result: Dict[str, object] = {
+        "path": normalized,
+        "filesDeleted": 0,
+        "directoriesDeleted": 0,
+        "thumbnailsDeleted": 0,
+        "previewsDeleted": 0,
+        "subtitlesDeleted": 0,
+        "scrubMetadataDeleted": 0,
+        "scrubSpritesDeleted": 0,
+        "generationStatusUpdated": 0,
+    }
+
+    _delete_file_for_result(video_data_root / "thumbnail.jpg", result, "thumbnailsDeleted")
+    _delete_file_for_result(video_data_root / "preview.mp4", result, "previewsDeleted")
+
+    scrub_dir = video_data_root / "scrubbing"
+    _delete_file_for_result(scrub_dir / "metadata.json", result, "scrubMetadataDeleted")
+    if scrub_dir.exists():
+        for sprite_path in scrub_dir.glob("sheet_*.jpg"):
+            _delete_file_for_result(sprite_path, result, "scrubSpritesDeleted")
+
+    subtitle_dir = video_data_root / "subtitles"
+    if subtitle_dir.exists():
+        for subtitle_path in subtitle_dir.glob("*.vtt"):
+            _delete_file_for_result(subtitle_path, result, "subtitlesDeleted")
+
+    _delete_file_for_result(LEGACY_THUMBNAIL_ROOT / f"{normalized}.jpg", result, "thumbnailsDeleted")
+    _delete_file_for_result(LEGACY_PREVIEW_ROOT / f"{normalized}.mp4", result, "previewsDeleted")
+    _delete_file_for_result(LEGACY_SCRUB_ROOT / f"{normalized}.json", result, "scrubMetadataDeleted")
+    _delete_directory_for_result(
+        LEGACY_SCRUB_ROOT / f"{normalized}.sprites",
+        result,
+        "scrubSpritesDeleted",
+    )
+
+    rel_posix = PurePosixPath(normalized)
+    legacy_subtitle_parent = LEGACY_SUBTITLE_ROOT / str(rel_posix.parent)
+    legacy_video_name = rel_posix.name
+    if legacy_subtitle_parent.is_dir():
+        for subtitle_path in legacy_subtitle_parent.glob(f"{legacy_video_name}*.vtt"):
+            if not subtitle_path.is_file():
+                continue
+            rel_video = _subtitle_cached_video_rel_path(LEGACY_SUBTITLE_ROOT, subtitle_path)
+            if rel_video == normalized:
+                _delete_file_for_result(subtitle_path, result, "subtitlesDeleted")
+
+    for cache_root in (
+        DATA_ROOT,
+        LEGACY_THUMBNAIL_ROOT,
+        LEGACY_PREVIEW_ROOT,
+        LEGACY_SUBTITLE_ROOT,
+        LEGACY_SCRUB_ROOT,
+    ):
+        if cache_root.exists():
+            result["directoriesDeleted"] += _prune_empty_dirs(cache_root)
+
+    with generation_lock:
+        status = generation_status.get(normalized)
+        if status is not None:
+            updates = 0
+            for key in ("thumbnail", "preview", "scrub"):
+                if status.get(key) != "missing":
+                    status[key] = "missing"
+                    updates += 1
+            result["generationStatusUpdated"] = updates
 
     return result
 
@@ -969,6 +1175,12 @@ def set_generation_status(rel_path: str, key: str, value: str) -> None:
         state.setdefault("preview", "missing")
         state.setdefault("scrub", "missing")
         state[key] = value
+
+
+def completed_future(value: object) -> Future:
+    future: Future = Future()
+    future.set_result(value)
+    return future
 
 
 def get_duration_seconds(video_path: Path) -> Optional[float]:
@@ -1680,75 +1892,101 @@ def queue_thumbnail_generation(rel_path: str) -> None:
     thumbnail_executor.submit(thumbnail_worker, rel_path)
 
 
-def preview_worker(rel_path: str) -> None:
-    generate_preview_sync(rel_path)
-
-
-def queue_preview_generation(rel_path: str) -> None:
+def queue_preview_generation(rel_path: str, force: bool = False) -> Future:
     rel_path = normalize_rel_path(rel_path)
+    video_path = resolve_video_path(rel_path)
+    if video_path is None:
+        set_generation_status(rel_path, "preview", "failed")
+        return completed_future(False)
+
     out_path = preview_cache_path(rel_path)
-    if out_path.exists():
+    with preview_generation_lock:
+        existing = preview_generation_futures.get(rel_path)
+        if existing is not None:
+            if not existing.done():
+                return existing
+            preview_generation_futures.pop(rel_path, None)
+
+    if not force and out_path.exists() and out_path.stat().st_mtime >= video_path.stat().st_mtime:
         set_generation_status(rel_path, "preview", "ready")
-        return
+        return completed_future(True)
 
-    with generation_lock:
-        state = generation_status.setdefault(
-            rel_path,
-            {"thumbnail": "missing", "preview": "missing", "scrub": "missing"},
-        )
-        if state["preview"] == "pending":
-            return
-        state["preview"] = "pending"
+    with preview_generation_lock:
+        existing = preview_generation_futures.get(rel_path)
+        if existing is not None:
+            if not existing.done():
+                return existing
+            preview_generation_futures.pop(rel_path, None)
 
-    preview_executor.submit(preview_worker, rel_path)
+        set_generation_status(rel_path, "preview", "pending")
+        future = preview_executor.submit(generate_preview_sync, rel_path, force)
+        preview_generation_futures[rel_path] = future
+
+    def clear_inflight(done_future: Future) -> None:
+        with preview_generation_lock:
+            if preview_generation_futures.get(rel_path) is done_future:
+                preview_generation_futures.pop(rel_path, None)
+
+    future.add_done_callback(clear_inflight)
+    return future
 
 
-def scrub_worker(rel_path: str) -> None:
+def queue_scrub_generation(rel_path: str, force: bool = False) -> Future:
     normalized = normalize_rel_path(rel_path)
     video_path = resolve_video_path(normalized)
     if video_path is None:
         set_generation_status(normalized, "scrub", "failed")
-        return
-
-    ok = generate_scrub_sprites(video_path, normalized)
-    set_generation_status(normalized, "scrub", "ready" if ok else "failed")
-
-
-def queue_scrub_generation(rel_path: str) -> None:
-    normalized = normalize_rel_path(rel_path)
-    video_path = resolve_video_path(normalized)
-    if video_path is None:
-        return
+        return completed_future(None)
 
     metadata_path = scrub_metadata_cache_path(normalized)
-    if metadata_path.exists() and metadata_path.stat().st_mtime >= video_path.stat().st_mtime:
+    with scrub_generation_lock:
+        existing = scrub_generation_futures.get(normalized)
+        if existing is not None:
+            if not existing.done():
+                return existing
+            scrub_generation_futures.pop(normalized, None)
+
+    if (
+        not force
+        and metadata_path.exists()
+        and metadata_path.stat().st_mtime >= video_path.stat().st_mtime
+    ):
         set_generation_status(normalized, "scrub", "ready")
-        return
+        return completed_future(metadata_path)
 
-    with generation_lock:
-        state = generation_status.setdefault(
-            normalized,
-            {"thumbnail": "missing", "preview": "missing", "scrub": "missing"},
-        )
-        if state.get("scrub") == "pending":
-            return
-        state["scrub"] = "pending"
+    with scrub_generation_lock:
+        existing = scrub_generation_futures.get(normalized)
+        if existing is not None:
+            if not existing.done():
+                return existing
+            scrub_generation_futures.pop(normalized, None)
 
-    scrub_executor.submit(scrub_worker, normalized)
+        set_generation_status(normalized, "scrub", "pending")
+        future = scrub_executor.submit(ensure_scrub_metadata, normalized, force)
+        scrub_generation_futures[normalized] = future
+
+    def clear_inflight(done_future: Future) -> None:
+        with scrub_generation_lock:
+            if scrub_generation_futures.get(normalized) is done_future:
+                scrub_generation_futures.pop(normalized, None)
+
+    future.add_done_callback(clear_inflight)
+    return future
 
 
-def generate_preview_sync(rel_path: str) -> bool:
+def generate_preview_sync(rel_path: str, force: bool = False) -> bool:
     rel_path = normalize_rel_path(rel_path)
-    out_path = preview_cache_path(rel_path)
-    if out_path.exists():
-        set_generation_status(rel_path, "preview", "ready")
-        return True
-
-    set_generation_status(rel_path, "preview", "pending")
     video_path = resolve_video_path(rel_path)
     if video_path is None:
         set_generation_status(rel_path, "preview", "failed")
         return False
+
+    out_path = preview_cache_path(rel_path)
+    if not force and out_path.exists() and out_path.stat().st_mtime >= video_path.stat().st_mtime:
+        set_generation_status(rel_path, "preview", "ready")
+        return True
+
+    set_generation_status(rel_path, "preview", "pending")
 
     ok = generate_preview(video_path, out_path)
     set_generation_status(rel_path, "preview", "ready" if ok else "failed")
@@ -1772,8 +2010,16 @@ def scrub_pregenerate_worker(force: bool = False) -> None:
                 }
             )
 
+        future_rows: List[Tuple[str, Future]] = []
         for rel_path in targets:
-            meta = ensure_scrub_metadata(rel_path, force=force)
+            normalized = normalize_rel_path(rel_path)
+            future_rows.append((normalized, queue_scrub_generation(normalized, force=force)))
+
+        for _normalized, future in future_rows:
+            try:
+                meta = future.result()
+            except Exception:
+                meta = None
             with scrub_pregen_lock:
                 scrub_pregen_state["done"] = int(scrub_pregen_state.get("done", 0)) + 1
                 if meta is None:
@@ -1788,7 +2034,17 @@ def start_scrub_pregeneration(force: bool = False) -> bool:
     with scrub_pregen_lock:
         if bool(scrub_pregen_state.get("running")):
             return False
-    scrub_executor.submit(scrub_pregenerate_worker, force)
+        scrub_pregen_state.update(
+            {
+                "running": True,
+                "total": 0,
+                "done": 0,
+                "failed": 0,
+                "startedAt": datetime.now(timezone.utc).isoformat(),
+                "finishedAt": None,
+            }
+        )
+    threading.Thread(target=scrub_pregenerate_worker, args=(force,), daemon=True).start()
     return True
 
 
@@ -1809,13 +2065,16 @@ def preview_pregenerate_worker(force: bool = False) -> None:
                 }
             )
 
+        future_rows: List[Tuple[str, Future]] = []
         for rel_path in targets:
             normalized = normalize_rel_path(rel_path)
-            if not force and preview_cache_path(normalized).exists():
-                set_generation_status(normalized, "preview", "ready")
-                ok = True
-            else:
-                ok = generate_preview_sync(normalized)
+            future_rows.append((normalized, queue_preview_generation(normalized, force=force)))
+
+        for _normalized, future in future_rows:
+            try:
+                ok = bool(future.result())
+            except Exception:
+                ok = False
 
             with preview_pregen_lock:
                 preview_pregen_state["done"] = int(preview_pregen_state.get("done", 0)) + 1
@@ -1831,7 +2090,17 @@ def start_preview_pregeneration(force: bool = False) -> bool:
     with preview_pregen_lock:
         if bool(preview_pregen_state.get("running")):
             return False
-    preview_executor.submit(preview_pregenerate_worker, force)
+        preview_pregen_state.update(
+            {
+                "running": True,
+                "total": 0,
+                "done": 0,
+                "failed": 0,
+                "startedAt": datetime.now(timezone.utc).isoformat(),
+                "finishedAt": None,
+            }
+        )
+    threading.Thread(target=preview_pregenerate_worker, args=(force,), daemon=True).start()
     return True
 
 
@@ -2057,7 +2326,10 @@ def api_preview(rel_path: str):
 
     out_path = preview_cache_path(normalized)
     if not out_path.exists():
-        ok = generate_preview_sync(normalized)
+        try:
+            ok = bool(queue_preview_generation(normalized).result())
+        except Exception:
+            ok = False
         if not ok:
             return jsonify({"status": "failed"}), 500
 
@@ -2093,7 +2365,10 @@ def api_scrub_metadata(rel_path: str):
     if resolve_video_path(normalized) is None:
         abort(404)
 
-    metadata_path = ensure_scrub_metadata(normalized)
+    try:
+        metadata_path = queue_scrub_generation(normalized).result()
+    except Exception:
+        metadata_path = None
     if metadata_path is None or not metadata_path.exists():
         return jsonify({"status": "failed"}), 500
 
@@ -2123,7 +2398,10 @@ def api_scrub_sprite(rel_path: str, sheet_index: int):
 
     sprite = get_scrub_sprite_path(normalized, sheet_index)
     if sprite is None:
-        metadata_path = ensure_scrub_metadata(normalized)
+        try:
+            metadata_path = queue_scrub_generation(normalized).result()
+        except Exception:
+            metadata_path = None
         if metadata_path is None:
             abort(404)
         sprite = get_scrub_sprite_path(normalized, sheet_index)
@@ -2173,6 +2451,32 @@ def api_data_cleanup():
         return jsonify({"error": CONFIG_ERROR}), 400
 
     payload = cleanup_orphaned_data_files()
+    return jsonify(payload)
+
+
+@app.post("/api/data/delete-type/<kind>")
+def api_data_delete_type(kind: str):
+    if CONFIG_ERROR:
+        return jsonify({"error": CONFIG_ERROR}), 400
+
+    normalized_kind = normalize_data_delete_kind(kind)
+    if normalized_kind is None:
+        return jsonify({"error": "unsupported data type"}), 400
+
+    payload = delete_cached_data_by_type(normalized_kind)
+    return jsonify(payload)
+
+
+@app.post("/api/data/delete/<path:rel_path>")
+def api_data_delete_for_item(rel_path: str):
+    if CONFIG_ERROR:
+        return jsonify({"error": CONFIG_ERROR}), 400
+
+    normalized = normalize_rel_path(rel_path)
+    if resolve_video_path(normalized) is None:
+        abort(404)
+
+    payload = delete_cached_data_for_video(normalized)
     return jsonify(payload)
 
 

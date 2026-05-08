@@ -451,11 +451,36 @@
         }
 
         .generation-actions {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            padding: 10px 12px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            padding: 12px;
             border-bottom: 1px solid rgba(141, 208, 197, 0.16);
+            background: rgba(8, 18, 22, 0.42);
+        }
+
+        .generation-action-group {
+            border: 1px solid rgba(141, 208, 197, 0.2);
+            border-radius: 12px;
+            background: rgba(9, 21, 26, 0.74);
+            padding: 9px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .generation-action-group-title {
+            margin: 0;
+            font-size: 0.68rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #9edbce;
+            font-weight: 600;
+        }
+
+        .generation-action-stack {
+            display: grid;
+            gap: 7px;
         }
 
         .generation-action-btn {
@@ -468,11 +493,35 @@
             font-size: 0.76rem;
             cursor: pointer;
             transition: border-color 140ms ease, background 140ms ease;
+            width: 100%;
+            text-align: left;
         }
 
         .generation-action-btn:hover {
             border-color: rgba(90, 216, 184, 0.8);
             background: rgba(14, 33, 37, 0.95);
+        }
+
+        .generation-action-btn-delete {
+            border-color: rgba(228, 105, 105, 0.58);
+            background: rgba(121, 40, 40, 0.44);
+            color: #ffe4e4;
+        }
+
+        .generation-action-btn-delete:hover {
+            border-color: rgba(244, 132, 132, 0.72);
+            background: rgba(142, 46, 46, 0.6);
+        }
+
+        .generation-action-btn-clean {
+            border-color: rgba(242, 185, 101, 0.62);
+            background: rgba(150, 104, 38, 0.44);
+            color: #fff2d7;
+        }
+
+        .generation-action-btn-clean:hover {
+            border-color: rgba(250, 201, 128, 0.78);
+            background: rgba(170, 116, 45, 0.62);
         }
 
         .generation-action-btn:disabled {
@@ -539,6 +588,36 @@
 
         .generation-state-col {
             width: 88px;
+        }
+
+        .generation-actions-col {
+            width: 112px;
+        }
+
+        .generation-row-actions {
+            text-align: right;
+        }
+
+        .generation-row-action-btn {
+            border: 1px solid rgba(228, 105, 105, 0.52);
+            background: rgba(121, 40, 40, 0.4);
+            color: #ffe0e0;
+            border-radius: 8px;
+            padding: 4px 8px;
+            font: inherit;
+            font-size: 0.72rem;
+            cursor: pointer;
+            transition: border-color 140ms ease, background 140ms ease;
+        }
+
+        .generation-row-action-btn:hover {
+            border-color: rgba(244, 132, 132, 0.66);
+            background: rgba(142, 46, 46, 0.52);
+        }
+
+        .generation-row-action-btn:disabled {
+            opacity: 0.65;
+            cursor: not-allowed;
         }
 
         .gen-badge {
@@ -1405,6 +1484,10 @@
             }
 
             .generation-actions {
+                grid-template-columns: 1fr;
+            }
+
+            .generation-actions {
                 flex-direction: column;
             }
 
@@ -1696,10 +1779,29 @@
                 </div>
             </div>
             <div class="generation-actions">
-                <button id="generateAllPreviewsBtn" class="generation-action-btn" type="button">Generate All Previews</button>
-                <button id="generateAllScrubBtn" class="generation-action-btn" type="button">Generate All Scrubbing</button>
-                <button id="cleanDataFolderBtn" class="generation-action-btn" type="button">Clean Data Folder</button>
-                <button id="reloadGenerationStatusBtn" class="generation-action-btn" type="button">Reload Job Status</button>
+                <section class="generation-action-group" aria-label="Generation actions">
+                    <h4 class="generation-action-group-title">Generate</h4>
+                    <div class="generation-action-stack">
+                        <button id="generateAllPreviewsBtn" class="generation-action-btn" type="button">Generate All Previews</button>
+                        <button id="generateAllScrubBtn" class="generation-action-btn" type="button">Generate All Scrubbing</button>
+                    </div>
+                </section>
+                <section class="generation-action-group" aria-label="Delete cache actions">
+                    <h4 class="generation-action-group-title">Delete Cached Data</h4>
+                    <div class="generation-action-stack">
+                        <button id="deleteAllThumbnailsBtn" class="generation-action-btn generation-action-btn-delete" type="button">Delete All Thumbnails</button>
+                        <button id="deleteAllPreviewsBtn" class="generation-action-btn generation-action-btn-delete" type="button">Delete All Previews</button>
+                        <button id="deleteAllScrubBtn" class="generation-action-btn generation-action-btn-delete" type="button">Delete All Scrubbing</button>
+                        <button id="deleteAllSubtitlesBtn" class="generation-action-btn generation-action-btn-delete" type="button">Delete All Subtitles</button>
+                    </div>
+                </section>
+                <section class="generation-action-group" aria-label="Maintenance actions">
+                    <h4 class="generation-action-group-title">Maintenance</h4>
+                    <div class="generation-action-stack">
+                        <button id="cleanDataFolderBtn" class="generation-action-btn generation-action-btn-clean" type="button">Clean Data Folder</button>
+                        <button id="reloadGenerationStatusBtn" class="generation-action-btn" type="button">Reload Job Status</button>
+                    </div>
+                </section>
             </div>
             <div class="generation-summary" id="generationSummary"></div>
             <div class="generation-table-wrap">
@@ -1710,11 +1812,12 @@
                             <th class="generation-state-col">Preview</th>
                             <th class="generation-state-col">Scrub</th>
                             <th>Title</th>
+                            <th class="generation-actions-col">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="generationRows">
                         <tr>
-                            <td colspan="4" class="generation-empty">Loading generation status...</td>
+                            <td colspan="5" class="generation-empty">Loading generation status...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -1776,6 +1879,10 @@
         const generationMetaEl = document.getElementById("generationMeta");
         const generateAllPreviewsBtn = document.getElementById("generateAllPreviewsBtn");
         const generateAllScrubBtn = document.getElementById("generateAllScrubBtn");
+        const deleteAllThumbnailsBtn = document.getElementById("deleteAllThumbnailsBtn");
+        const deleteAllPreviewsBtn = document.getElementById("deleteAllPreviewsBtn");
+        const deleteAllScrubBtn = document.getElementById("deleteAllScrubBtn");
+        const deleteAllSubtitlesBtn = document.getElementById("deleteAllSubtitlesBtn");
         const cleanDataFolderBtn = document.getElementById("cleanDataFolderBtn");
         const reloadGenerationStatusBtn = document.getElementById("reloadGenerationStatusBtn");
         const generationSummaryEl = document.getElementById("generationSummary");
@@ -2762,8 +2869,34 @@
             clearScrubBindings();
         }
 
+        function setGenerationToolbarDisabled(disabled) {
+            generateAllPreviewsBtn.disabled = disabled;
+            generateAllScrubBtn.disabled = disabled;
+            deleteAllThumbnailsBtn.disabled = disabled;
+            deleteAllPreviewsBtn.disabled = disabled;
+            deleteAllScrubBtn.disabled = disabled;
+            deleteAllSubtitlesBtn.disabled = disabled;
+            cleanDataFolderBtn.disabled = disabled;
+        }
+
+        function dataKindLabel(kind) {
+            if (kind === "thumbnail") {
+                return "Thumbnail";
+            }
+            if (kind === "preview") {
+                return "Preview";
+            }
+            if (kind === "scrub") {
+                return "Scrubbing";
+            }
+            if (kind === "subtitle") {
+                return "Subtitle";
+            }
+            return "Data";
+        }
+
         async function triggerBulkGeneration(kind) {
-            if (state.generationActionInFlight) {
+            if (state.generationActionInFlight || state.cleanupRequestInFlight) {
                 return;
             }
 
@@ -2772,9 +2905,7 @@
             }
 
             state.generationActionInFlight = true;
-            generateAllPreviewsBtn.disabled = true;
-            generateAllScrubBtn.disabled = true;
-            cleanDataFolderBtn.disabled = true;
+            setGenerationToolbarDisabled(true);
             const label = kind === "preview" ? "preview" : "scrub";
             try {
                 const response = await fetch(`/api/${kind}/pregenerate`, {
@@ -2795,9 +2926,86 @@
                 generationMetaEl.textContent = `Could not start bulk ${label} generation.`;
             } finally {
                 state.generationActionInFlight = false;
-                generateAllPreviewsBtn.disabled = false;
-                generateAllScrubBtn.disabled = false;
-                cleanDataFolderBtn.disabled = state.cleanupRequestInFlight;
+                loadGenerationStatuses({ isPoll: true });
+            }
+        }
+
+        async function triggerDeleteDataType(kind) {
+            if (state.generationActionInFlight || state.cleanupRequestInFlight) {
+                return;
+            }
+
+            const label = dataKindLabel(kind);
+            const shouldDelete = window.confirm(
+                `Delete all cached ${label.toLowerCase()} data for every video?`
+            );
+            if (!shouldDelete) {
+                return;
+            }
+
+            state.generationActionInFlight = true;
+            setGenerationToolbarDisabled(true);
+            generationMetaEl.textContent = `Deleting all ${label.toLowerCase()} data...`;
+
+            try {
+                const response = await fetch(`/api/data/delete-type/${encodeURIComponent(kind)}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                });
+                const payload = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(payload.error || `Failed to delete ${label.toLowerCase()} data`);
+                }
+
+                generationMetaEl.textContent =
+                    `Deleted all ${label.toLowerCase()} data: removed ${Number(payload.filesDeleted || 0)} files and ` +
+                    `${Number(payload.directoriesDeleted || 0)} folders.`;
+                await loadGenerationStatuses();
+            } catch (error) {
+                generationMetaEl.textContent = `Delete failed for ${label.toLowerCase()} data: ${error.message}`;
+            } finally {
+                state.generationActionInFlight = false;
+                loadGenerationStatuses({ isPoll: true });
+            }
+        }
+
+        async function triggerDeleteItemData(videoPath, label) {
+            if (!videoPath || state.generationActionInFlight || state.cleanupRequestInFlight) {
+                return;
+            }
+
+            const shouldDelete = window.confirm(
+                `Delete all cached data for "${label}"?`
+            );
+            if (!shouldDelete) {
+                return;
+            }
+
+            state.generationActionInFlight = true;
+            setGenerationToolbarDisabled(true);
+            generationMetaEl.textContent = `Deleting cached data for ${label}...`;
+
+            try {
+                const response = await fetch(`/api/data/delete/${encodePath(videoPath)}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                });
+                const payload = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(payload.error || "Failed to delete video cache data");
+                }
+
+                generationMetaEl.textContent =
+                    `Deleted cache data for ${label}: removed ${Number(payload.filesDeleted || 0)} files and ` +
+                    `${Number(payload.directoriesDeleted || 0)} folders.`;
+                await loadGenerationStatuses();
+            } catch (error) {
+                generationMetaEl.textContent = `Delete failed for ${label}: ${error.message}`;
+            } finally {
+                state.generationActionInFlight = false;
+                loadGenerationStatuses({ isPoll: true });
             }
         }
 
@@ -2814,7 +3022,7 @@
             }
 
             state.cleanupRequestInFlight = true;
-            cleanDataFolderBtn.disabled = true;
+            setGenerationToolbarDisabled(true);
             cleanDataFolderBtn.textContent = "Cleaning Data Folder...";
             generationMetaEl.textContent = "Cleaning orphaned cache data...";
 
@@ -2838,8 +3046,8 @@
                 generationMetaEl.textContent = `Data cleanup failed: ${error.message}`;
             } finally {
                 state.cleanupRequestInFlight = false;
-                cleanDataFolderBtn.disabled = false;
                 cleanDataFolderBtn.textContent = "Clean Data Folder";
+                loadGenerationStatuses({ isPoll: true });
             }
         }
 
@@ -3774,7 +3982,7 @@
             if (!items.length) {
                 const row = document.createElement("tr");
                 const cell = document.createElement("td");
-                cell.colSpan = 4;
+                cell.colSpan = 5;
                 cell.className = "generation-empty";
                 cell.textContent = "No videos indexed yet.";
                 row.appendChild(cell);
@@ -3825,6 +4033,24 @@
                 pathCell.title = String(item.path || processPathLabel(item));
                 row.appendChild(pathCell);
 
+                const actionsCell = document.createElement("td");
+                actionsCell.className = "generation-row-actions";
+
+                const deleteBtn = document.createElement("button");
+                deleteBtn.type = "button";
+                deleteBtn.className = "generation-row-action-btn";
+                deleteBtn.textContent = "Delete Data";
+                const itemPath = String(item.path || "");
+                deleteBtn.disabled =
+                    !itemPath ||
+                    state.generationActionInFlight ||
+                    state.cleanupRequestInFlight;
+                deleteBtn.addEventListener("click", () => {
+                    triggerDeleteItemData(itemPath, processPathLabel(item));
+                });
+                actionsCell.appendChild(deleteBtn);
+                row.appendChild(actionsCell);
+
                 fragment.appendChild(row);
             }
 
@@ -3874,8 +4100,14 @@
                 generationMetaEl.textContent = `${totalCount} videos tracked | ${pendingCount} active | ${failedCount} failed`;
                 generateAllPreviewsBtn.disabled = previewJobRunning || state.generationActionInFlight;
                 generateAllScrubBtn.disabled = scrubJobRunning || state.generationActionInFlight;
-                cleanDataFolderBtn.disabled =
+                const disableDataActions =
                     previewJobRunning || scrubJobRunning || state.generationActionInFlight || state.cleanupRequestInFlight;
+                deleteAllThumbnailsBtn.disabled = disableDataActions;
+                deleteAllPreviewsBtn.disabled = disableDataActions;
+                deleteAllScrubBtn.disabled = disableDataActions;
+                deleteAllSubtitlesBtn.disabled = disableDataActions;
+                cleanDataFolderBtn.disabled =
+                    disableDataActions;
                 generateAllPreviewsBtn.textContent = previewJobRunning ? "Generating All Previews..." : "Generate All Previews";
                 generateAllScrubBtn.textContent = scrubJobRunning ? "Generating All Scrubbing..." : "Generate All Scrubbing";
                 if (!state.cleanupRequestInFlight) {
@@ -3888,6 +4120,10 @@
                 generationMetaEl.textContent = `Generation status unavailable: ${error.message}`;
                 generateAllPreviewsBtn.disabled = state.generationActionInFlight;
                 generateAllScrubBtn.disabled = state.generationActionInFlight;
+                deleteAllThumbnailsBtn.disabled = state.generationActionInFlight || state.cleanupRequestInFlight;
+                deleteAllPreviewsBtn.disabled = state.generationActionInFlight || state.cleanupRequestInFlight;
+                deleteAllScrubBtn.disabled = state.generationActionInFlight || state.cleanupRequestInFlight;
+                deleteAllSubtitlesBtn.disabled = state.generationActionInFlight || state.cleanupRequestInFlight;
                 cleanDataFolderBtn.disabled = state.generationActionInFlight || state.cleanupRequestInFlight;
                 scheduleGenerationPoll(5000);
             } finally {
@@ -4038,6 +4274,22 @@
 
         generateAllScrubBtn.addEventListener("click", () => {
             triggerBulkGeneration("scrub");
+        });
+
+        deleteAllThumbnailsBtn.addEventListener("click", () => {
+            triggerDeleteDataType("thumbnail");
+        });
+
+        deleteAllPreviewsBtn.addEventListener("click", () => {
+            triggerDeleteDataType("preview");
+        });
+
+        deleteAllScrubBtn.addEventListener("click", () => {
+            triggerDeleteDataType("scrub");
+        });
+
+        deleteAllSubtitlesBtn.addEventListener("click", () => {
+            triggerDeleteDataType("subtitle");
         });
 
         cleanDataFolderBtn.addEventListener("click", () => {
