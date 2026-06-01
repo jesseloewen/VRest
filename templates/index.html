@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
@@ -4394,7 +4394,7 @@
             }
 
             const ascending = state.sortDirection >= 0;
-            sortDirBtnEl.textContent = ascending ? "???" : "???";
+            sortDirBtnEl.textContent = ascending ? "↑" : "↓";
             sortDirBtnEl.title = ascending
                 ? "Ascending order (click to reverse)"
                 : "Descending order (click to reverse)";
@@ -4448,7 +4448,7 @@
                 const toggle = document.createElement("button");
                 toggle.type = "button";
                 toggle.className = "tree-toggle";
-                toggle.textContent = isExpanded ? "???" : "???";
+                toggle.textContent = isExpanded ? "▼" : "▶";
                 toggle.setAttribute("aria-label", isExpanded ? "Collapse folder" : "Expand folder");
                 toggle.addEventListener("click", (event) => {
                     event.stopPropagation();
