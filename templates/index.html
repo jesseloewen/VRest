@@ -1681,9 +1681,405 @@
             }
         }
 
+
+
+
+
         .app-shell.generation-open ~ .generation-backdrop {
             opacity: 1;
             pointer-events: auto;
+        }
+
+        /* ── Upload Button ── */
+        .upload-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            height: 40px;
+            padding: 0 14px;
+            border: 1px solid rgba(90, 216, 184, 0.55);
+            background: rgba(45, 191, 152, 0.18);
+            color: #cdfff2;
+            border-radius: 10px;
+            cursor: pointer;
+            font: inherit;
+            font-size: 0.86rem;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+            transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+            flex: 0 0 auto;
+            white-space: nowrap;
+        }
+
+        .upload-btn:hover {
+            background: rgba(45, 191, 152, 0.32);
+            border-color: rgba(90, 216, 184, 0.9);
+            transform: translateY(-1px);
+        }
+
+        .upload-btn svg {
+            width: 16px;
+            height: 16px;
+            flex: 0 0 16px;
+            pointer-events: none;
+        }
+
+        @media (max-width: 900px) {
+            .upload-btn {
+                padding: 0 10px;
+                font-size: 0.78rem;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .upload-btn .upload-btn-text {
+                display: none;
+            }
+            .upload-btn {
+                width: 40px;
+                padding: 0;
+            }
+        }
+
+        /* ── Upload Dialog ── */
+        dialog.upload-dialog {
+            width: min(96vw, 560px);
+            max-width: 96vw;
+            max-height: 96dvh;
+            border: 1px solid rgba(141, 208, 197, 0.42);
+            border-radius: 16px;
+            background: rgba(5, 11, 14, 0.98);
+            color: var(--text);
+            padding: 0;
+            box-shadow: 0 28px 60px rgba(0, 0, 0, 0.55);
+            overflow: hidden;
+        }
+
+        dialog.upload-dialog:not([open]) { display: none; }
+        dialog.upload-dialog[open] { display: flex; flex-direction: column; }
+
+        dialog.upload-dialog::backdrop {
+            backdrop-filter: blur(5px);
+            background: rgba(3, 6, 8, 0.65);
+        }
+
+        .upload-dialog-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 14px 16px;
+            border-bottom: 1px solid rgba(141, 208, 197, 0.18);
+            background: rgba(8, 17, 21, 0.72);
+            flex: 0 0 auto;
+        }
+
+        .upload-dialog-head h3 {
+            margin: 0;
+            font-size: 1.05rem;
+            color: #d9f9f0;
+        }
+
+        .upload-dialog-body {
+            padding: 18px 18px 20px;
+            overflow-y: auto;
+            flex: 1 1 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .upload-field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .upload-label {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: #9de7d4;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+        }
+
+        .upload-label span {
+            color: var(--muted);
+            font-size: 0.76rem;
+            text-transform: none;
+            font-weight: 400;
+            letter-spacing: 0;
+        }
+
+        .upload-drop-zone {
+            border: 2px dashed rgba(90, 216, 184, 0.4);
+            border-radius: 12px;
+            background: rgba(10, 22, 27, 0.72);
+            padding: 28px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: border-color 160ms ease, background 160ms ease;
+            text-align: center;
+        }
+
+        .upload-drop-zone:hover,
+        .upload-drop-zone.dragover {
+            border-color: rgba(90, 216, 184, 0.85);
+            background: rgba(14, 30, 36, 0.9);
+        }
+
+        .upload-drop-icon {
+            width: 38px;
+            height: 38px;
+            color: var(--accent);
+            opacity: 0.75;
+        }
+
+        .upload-drop-text {
+            font-size: 0.9rem;
+            color: #c4ede3;
+        }
+
+        .upload-drop-sub {
+            font-size: 0.76rem;
+            color: var(--muted);
+        }
+
+        .upload-file-chosen {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 12px;
+            border: 1px solid rgba(90, 216, 184, 0.35);
+            border-radius: 10px;
+            background: rgba(11, 24, 29, 0.82);
+            font-size: 0.84rem;
+            color: #d6f7ee;
+            min-width: 0;
+        }
+
+        .upload-file-chosen span {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 0;
+            flex: 1 1 auto;
+        }
+
+        .upload-file-clear {
+            width: 22px;
+            height: 22px;
+            border: 0;
+            border-radius: 999px;
+            background: rgba(228, 105, 105, 0.7);
+            color: #fff;
+            cursor: pointer;
+            font-size: 0.9rem;
+            line-height: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 22px;
+            padding: 0;
+        }
+
+        .upload-file-clear:hover {
+            background: rgba(228, 105, 105, 1);
+        }
+
+        .upload-input {
+            font: inherit;
+            color: var(--text);
+            background: rgba(9, 19, 22, 0.7);
+            border: 1px solid rgba(141, 208, 197, 0.3);
+            border-radius: 10px;
+            padding: 9px 12px;
+            outline: none;
+            transition: border-color 140ms ease;
+            width: 100%;
+        }
+
+        .upload-input:focus {
+            border-color: rgba(90, 216, 184, 0.8);
+        }
+
+        .upload-input::placeholder {
+            color: var(--muted);
+        }
+
+        .upload-folder-row {
+            display: flex;
+            gap: 8px;
+            align-items: flex-start;
+        }
+
+        .upload-folder-row .upload-input {
+            flex: 1 1 auto;
+        }
+
+        .upload-folder-mode-toggle {
+            display: flex;
+            gap: 0;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid rgba(141, 208, 197, 0.3);
+            flex: 0 0 auto;
+        }
+
+        .upload-folder-mode-btn {
+            border: 0;
+            background: rgba(9, 19, 22, 0.7);
+            color: var(--muted);
+            padding: 8px 12px;
+            font: inherit;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: background 140ms ease, color 140ms ease;
+        }
+
+        .upload-folder-mode-btn.active {
+            background: rgba(45, 191, 152, 0.28);
+            color: #cdfff2;
+            font-weight: 600;
+        }
+
+        .upload-folder-existing {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .upload-folder-select {
+            font: inherit;
+            color: var(--text);
+            background: rgba(9, 19, 22, 0.7);
+            border: 1px solid rgba(141, 208, 197, 0.3);
+            border-radius: 10px;
+            padding: 9px 12px;
+            outline: none;
+            width: 100%;
+            transition: border-color 140ms ease;
+        }
+
+        .upload-folder-select:focus {
+            border-color: rgba(90, 216, 184, 0.8);
+        }
+
+        .upload-folder-select option {
+            background: #0b1a20;
+            color: var(--text);
+        }
+
+        .upload-progress-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .upload-progress-bar-track {
+            height: 8px;
+            border-radius: 999px;
+            background: rgba(35, 65, 74, 0.8);
+            overflow: hidden;
+        }
+
+        .upload-progress-bar-fill {
+            height: 100%;
+            border-radius: 999px;
+            background: linear-gradient(90deg, var(--accent-strong), var(--accent));
+            width: 0%;
+            transition: width 200ms ease;
+        }
+
+        .upload-progress-text {
+            font-size: 0.78rem;
+            color: var(--muted);
+            text-align: right;
+        }
+
+        .upload-status {
+            font-size: 0.86rem;
+            min-height: 1.3em;
+            padding: 8px 12px;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .upload-status.visible { display: block; }
+
+        .upload-status.success {
+            background: rgba(38, 132, 105, 0.25);
+            border: 1px solid rgba(90, 216, 184, 0.4);
+            color: #b8f5e4;
+        }
+
+        .upload-status.error {
+            background: rgba(121, 40, 40, 0.35);
+            border: 1px solid rgba(228, 105, 105, 0.45);
+            color: #ffe4e4;
+        }
+
+        .upload-dialog-foot {
+            padding: 12px 18px 16px;
+            border-top: 1px solid rgba(141, 208, 197, 0.16);
+            background: rgba(6, 14, 18, 0.62);
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            flex: 0 0 auto;
+        }
+
+        .upload-submit-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 9px 20px;
+            border: 1px solid rgba(90, 216, 184, 0.6);
+            background: rgba(45, 191, 152, 0.22);
+            color: #cdfff2;
+            border-radius: 10px;
+            font: inherit;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 140ms ease, border-color 140ms ease;
+        }
+
+        .upload-submit-btn:hover:not(:disabled) {
+            background: rgba(45, 191, 152, 0.38);
+            border-color: rgba(90, 216, 184, 1);
+        }
+
+        .upload-submit-btn:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
+        .upload-cancel-btn {
+            padding: 9px 18px;
+            border: 1px solid rgba(141, 208, 197, 0.28);
+            background: transparent;
+            color: var(--muted);
+            border-radius: 10px;
+            font: inherit;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background 140ms ease, color 140ms ease;
+        }
+
+        .upload-cancel-btn:hover:not(:disabled) {
+            background: rgba(141, 208, 197, 0.12);
+            color: var(--text);
+        }
+
+        .upload-cancel-btn:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
         }
     </style>
 </head>
@@ -1709,6 +2105,14 @@
                     />
                     <span class="preview-mode-switch" aria-hidden="true"></span>
                 </label>
+                <button id="uploadBtn" class="upload-btn" type="button" title="Upload a video" aria-label="Upload a video">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="16 16 12 12 8 16"></polyline>
+                        <line x1="12" y1="12" x2="12" y2="21"></line>
+                        <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path>
+                    </svg>
+                    <span class="upload-btn-text">Upload</span>
+                </button>
                 <button id="reindexBtn" class="sort-dir-btn randomize-btn" type="button" title="Start indexing again">Re-Index</button>
                 <button
                     id="toggleGenerationPanel"
@@ -1830,8 +2234,100 @@
             </div>
         </aside>
     </div>
-    <div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div>
+
+
+        <div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div>
     <div class="generation-backdrop" id="generationBackdrop" aria-hidden="true"></div>
+
+    <!-- Upload Dialog -->
+    <dialog class="upload-dialog" id="uploadDialog" aria-label="Upload a video">
+        <div class="upload-dialog-head">
+            <h3>Upload Video</h3>
+            <button class="dialog-close" id="uploadDialogClose" type="button" aria-label="Close upload dialog">×</button>
+        </div>
+        <div class="upload-dialog-body">
+            <!-- Drop Zone -->
+            <div class="upload-field">
+                <label class="upload-label" for="uploadFileInput">Video File <span>(any size or length)</span></label>
+                <div class="upload-drop-zone" id="uploadDropZone" role="button" tabindex="0" aria-label="Drop a video here or click to choose">
+                    <svg class="upload-drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="16 16 12 12 8 16"></polyline>
+                        <line x1="12" y1="12" x2="12" y2="21"></line>
+                        <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path>
+                    </svg>
+                    <span class="upload-drop-text">Drop a video here or <strong>click to choose</strong></span>
+                    <span class="upload-drop-sub" id="uploadDropSub">Supports MP4, MKV, AVI, MOV, WebM, WMV, FLV, M4V</span>
+                </div>
+                <input type="file" id="uploadFileInput" accept=".mp4,.mkv,.avi,.mov,.webm,.wmv,.flv,.m4v,video/*" style="display:none" aria-hidden="true" />
+                <div class="upload-file-chosen" id="uploadFileChosen" hidden>
+                    <span id="uploadFileChosenName"></span>
+                    <button class="upload-file-clear" id="uploadFileClear" type="button" aria-label="Remove selected file" title="Remove">×</button>
+                </div>
+            </div>
+
+            <!-- File Name -->
+            <div class="upload-field">
+                <label class="upload-label" for="uploadFilename">File Name <span>(including extension)</span></label>
+                <input
+                    id="uploadFilename"
+                    class="upload-input"
+                    type="text"
+                    placeholder="e.g. my-video.mp4"
+                    autocomplete="off"
+                    spellcheck="false"
+                />
+            </div>
+
+            <!-- Folder -->
+            <div class="upload-field">
+                <span class="upload-label">Destination Folder</span>
+                <div class="upload-folder-mode-toggle" role="group" aria-label="Folder mode">
+                    <button class="upload-folder-mode-btn active" id="uploadFolderModeExisting" type="button">Existing</button>
+                    <button class="upload-folder-mode-btn" id="uploadFolderModeNew" type="button">New Folder</button>
+                </div>
+
+                <div id="uploadFolderExistingWrap">
+                    <select id="uploadFolderSelect" class="upload-folder-select" aria-label="Select destination folder">
+                        <option value="">(Root — video directory)</option>
+                    </select>
+                </div>
+
+                <div id="uploadFolderNewWrap" hidden>
+                    <input
+                        id="uploadFolderNew"
+                        class="upload-input"
+                        type="text"
+                        placeholder="e.g. Movies/Action"
+                        autocomplete="off"
+                        spellcheck="false"
+                        aria-label="New folder path"
+                    />
+                </div>
+            </div>
+
+            <!-- Progress -->
+            <div class="upload-progress-wrap" id="uploadProgressWrap" hidden>
+                <div class="upload-progress-bar-track">
+                    <div class="upload-progress-bar-fill" id="uploadProgressFill"></div>
+                </div>
+                <div class="upload-progress-text" id="uploadProgressText">0%</div>
+            </div>
+
+            <!-- Status -->
+            <div class="upload-status" id="uploadStatus" role="status" aria-live="polite"></div>
+        </div>
+        <div class="upload-dialog-foot">
+            <button class="upload-cancel-btn" id="uploadCancelBtn" type="button">Cancel</button>
+            <button class="upload-submit-btn" id="uploadSubmitBtn" type="button" disabled>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="16 16 12 12 8 16"></polyline>
+                    <line x1="12" y1="12" x2="12" y2="21"></line>
+                    <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path>
+                </svg>
+                Upload Video
+            </button>
+        </div>
+    </dialog>
 
     <dialog class="video-dialog" id="videoDialog">
         <div class="dialog-head">
@@ -1860,6 +2356,276 @@
     </dialog>
 
     <script src="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.polyfilled.min.js"></script>
+
+    <script>
+    // ── Upload Dialog Logic ────────────────────────────────────────────────────
+    (function () {
+        const uploadBtnEl        = document.getElementById("uploadBtn");
+        const uploadDialogEl     = document.getElementById("uploadDialog");
+        const uploadDialogClose  = document.getElementById("uploadDialogClose");
+        const uploadCancelBtn    = document.getElementById("uploadCancelBtn");
+        const uploadSubmitBtn    = document.getElementById("uploadSubmitBtn");
+        const uploadDropZone     = document.getElementById("uploadDropZone");
+        const uploadFileInput    = document.getElementById("uploadFileInput");
+        const uploadFileChosen   = document.getElementById("uploadFileChosen");
+        const uploadFileChosenName = document.getElementById("uploadFileChosenName");
+        const uploadFileClear    = document.getElementById("uploadFileClear");
+        const uploadFilenameEl   = document.getElementById("uploadFilename");
+        const uploadDropSub      = document.getElementById("uploadDropSub");
+        const uploadFolderModeExisting = document.getElementById("uploadFolderModeExisting");
+        const uploadFolderModeNew      = document.getElementById("uploadFolderModeNew");
+        const uploadFolderExistingWrap = document.getElementById("uploadFolderExistingWrap");
+        const uploadFolderNewWrap      = document.getElementById("uploadFolderNewWrap");
+        const uploadFolderSelect = document.getElementById("uploadFolderSelect");
+        const uploadFolderNew    = document.getElementById("uploadFolderNew");
+        const uploadProgressWrap = document.getElementById("uploadProgressWrap");
+        const uploadProgressFill = document.getElementById("uploadProgressFill");
+        const uploadProgressText = document.getElementById("uploadProgressText");
+        const uploadStatusEl     = document.getElementById("uploadStatus");
+
+        let uploadState = {
+            file: null,
+            folderMode: "existing",  // "existing" | "new"
+            uploading: false,
+            xhr: null,
+        };
+
+        // ── Helpers ──────────────────────────────────────────────────────────
+        function setUploadStatus(message, type) {
+            uploadStatusEl.textContent = message;
+            uploadStatusEl.className = "upload-status";
+            if (message) {
+                uploadStatusEl.classList.add("visible", type || "success");
+            }
+        }
+
+        function clearUploadStatus() {
+            uploadStatusEl.textContent = "";
+            uploadStatusEl.className = "upload-status";
+        }
+
+        function setProgress(pct, label) {
+            uploadProgressFill.style.width = `${pct}%`;
+            uploadProgressText.textContent = label || `${Math.round(pct)}%`;
+        }
+
+        function setUploading(active) {
+            uploadState.uploading = Boolean(active);
+            uploadSubmitBtn.disabled = active || !uploadState.file;
+            uploadCancelBtn.disabled = false;
+            uploadDialogClose.disabled = active;
+            uploadDropZone.style.pointerEvents = active ? "none" : "";
+            uploadDropZone.style.opacity = active ? "0.55" : "";
+            uploadFileInput.disabled = active;
+            uploadFilenameEl.disabled = active;
+            uploadFolderSelect.disabled = active;
+            uploadFolderNew.disabled = active;
+            uploadFolderModeExisting.disabled = active;
+            uploadFolderModeNew.disabled = active;
+        }
+
+        function validateAndEnableSubmit() {
+            uploadSubmitBtn.disabled = !uploadState.file || uploadState.uploading;
+        }
+
+        // ── Folder mode toggle ───────────────────────────────────────────────
+        function setFolderMode(mode) {
+            uploadState.folderMode = mode;
+            if (mode === "existing") {
+                uploadFolderModeExisting.classList.add("active");
+                uploadFolderModeNew.classList.remove("active");
+                uploadFolderExistingWrap.hidden = false;
+                uploadFolderNewWrap.hidden = true;
+            } else {
+                uploadFolderModeNew.classList.add("active");
+                uploadFolderModeExisting.classList.remove("active");
+                uploadFolderExistingWrap.hidden = true;
+                uploadFolderNewWrap.hidden = false;
+                uploadFolderNew.focus();
+            }
+        }
+
+        uploadFolderModeExisting.addEventListener("click", () => setFolderMode("existing"));
+        uploadFolderModeNew.addEventListener("click", () => setFolderMode("new"));
+
+        // ── Load existing folders ────────────────────────────────────────────
+        async function loadFolders() {
+            uploadFolderSelect.innerHTML = '<option value="">(Root \u2014 video directory)</option>';
+            try {
+                const res = await fetch("/api/folders", { cache: "no-store" });
+                const data = await res.json();
+                const folders = Array.isArray(data.folders) ? data.folders : [];
+                for (const folder of folders) {
+                    if (!folder) continue;
+                    const opt = document.createElement("option");
+                    opt.value = folder;
+                    opt.textContent = folder;
+                    uploadFolderSelect.appendChild(opt);
+                }
+            } catch (_) {
+                // Non-fatal — user can still type a new folder.
+            }
+        }
+
+        // ── File selection ───────────────────────────────────────────────────
+        function applyFile(file) {
+            if (!file) return;
+            uploadState.file = file;
+            uploadFileChosen.hidden = false;
+            uploadDropZone.hidden = true;
+            uploadFileChosenName.textContent = file.name;
+
+            // Auto-populate filename field if empty.
+            if (!uploadFilenameEl.value.trim()) {
+                uploadFilenameEl.value = file.name;
+            }
+
+            clearUploadStatus();
+            validateAndEnableSubmit();
+        }
+
+        function clearFile() {
+            uploadState.file = null;
+            uploadFileInput.value = "";
+            uploadFileChosen.hidden = true;
+            uploadDropZone.hidden = false;
+            validateAndEnableSubmit();
+        }
+
+        uploadDropZone.addEventListener("click", () => uploadFileInput.click());
+        uploadDropZone.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                uploadFileInput.click();
+            }
+        });
+
+        uploadFileInput.addEventListener("change", () => {
+            if (uploadFileInput.files && uploadFileInput.files[0]) {
+                applyFile(uploadFileInput.files[0]);
+            }
+        });
+
+        uploadFileClear.addEventListener("click", clearFile);
+
+        // Drag and drop
+        uploadDropZone.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            uploadDropZone.classList.add("dragover");
+        });
+        uploadDropZone.addEventListener("dragleave", () => uploadDropZone.classList.remove("dragover"));
+        uploadDropZone.addEventListener("drop", (e) => {
+            e.preventDefault();
+            uploadDropZone.classList.remove("dragover");
+            const file = e.dataTransfer?.files?.[0];
+            if (file) applyFile(file);
+        });
+
+        // ── Open / Close ─────────────────────────────────────────────────────
+        function openUploadDialog() {
+            clearFile();
+            uploadFilenameEl.value = "";
+            uploadFolderNew.value = "";
+            uploadProgressWrap.hidden = true;
+            setProgress(0);
+            clearUploadStatus();
+            setFolderMode("existing");
+            setUploading(false);
+            loadFolders();
+            uploadDialogEl.showModal();
+        }
+
+        function closeUploadDialog() {
+            if (uploadState.uploading) {
+                if (!confirm("An upload is in progress. Cancel it?")) return;
+                if (uploadState.xhr) {
+                    uploadState.xhr.abort();
+                    uploadState.xhr = null;
+                }
+            }
+            uploadDialogEl.close();
+        }
+
+        uploadBtnEl.addEventListener("click", openUploadDialog);
+        uploadDialogClose.addEventListener("click", closeUploadDialog);
+        uploadCancelBtn.addEventListener("click", closeUploadDialog);
+        uploadDialogEl.addEventListener("cancel", (e) => {
+            e.preventDefault();
+            closeUploadDialog();
+        });
+
+        // ── Submit / Upload ──────────────────────────────────────────────────
+        uploadSubmitBtn.addEventListener("click", async () => {
+            if (!uploadState.file || uploadState.uploading) return;
+
+            const filename = uploadFilenameEl.value.trim() || uploadState.file.name;
+            const folder = uploadState.folderMode === "new"
+                ? uploadFolderNew.value.trim()
+                : uploadFolderSelect.value;
+            const createFolder = uploadState.folderMode === "new" ? folder : "";
+
+            clearUploadStatus();
+            setUploading(true);
+            uploadProgressWrap.hidden = false;
+            setProgress(0, "Uploading...");
+
+            const formData = new FormData();
+            formData.append("file", uploadState.file);
+            formData.append("filename", filename);
+            formData.append("folder", uploadState.folderMode === "existing" ? folder : "");
+            formData.append("createFolder", createFolder);
+
+            const xhr = new XMLHttpRequest();
+            uploadState.xhr = xhr;
+
+            xhr.upload.addEventListener("progress", (e) => {
+                if (!e.lengthComputable) return;
+                const pct = (e.loaded / e.total) * 100;
+                setProgress(pct, pct < 100 ? `${Math.round(pct)}% — uploading...` : "Processing...");
+            });
+
+            xhr.addEventListener("load", () => {
+                uploadState.xhr = null;
+                let payload = {};
+                try { payload = JSON.parse(xhr.responseText); } catch (_) {}
+
+                if (xhr.status === 201) {
+                    setProgress(100, "Done!");
+                    setUploadStatus(`\u2714 Uploaded: ${payload.filename || filename}${payload.folder ? " → " + payload.folder : ""}`, "success");
+                    setUploading(false);
+                    // Trigger a library re-scan so the new video appears.
+                    fetch("/api/reindex", { method: "POST" }).catch(() => {});
+                    if (typeof loadLibrary === "function") {
+                        setTimeout(loadLibrary, 1200);
+                    }
+                    // Auto-close dialog after a brief delay so user sees the success message.
+                    setTimeout(function () { uploadDialogEl.close(); }, 1800);
+                } else {
+                    setProgress(0, "");
+                    setUploadStatus(`\u2716 Error: ${payload.error || "Upload failed (" + xhr.status + ")"}`, "error");
+                    setUploading(false);
+                }
+            });
+
+            xhr.addEventListener("error", () => {
+                uploadState.xhr = null;
+                setProgress(0, "");
+                setUploadStatus("\u2716 Network error — upload failed.", "error");
+                setUploading(false);
+            });
+
+            xhr.addEventListener("abort", () => {
+                uploadState.xhr = null;
+                setProgress(0, "");
+                setUploadStatus("Upload cancelled.", "error");
+                setUploading(false);
+            });
+
+            xhr.open("POST", "/api/upload");
+            xhr.send(formData);
+        });
+    })();
+    </script>
 
     <script>
         const appShell = document.getElementById("appShell");
@@ -3628,7 +4394,7 @@
             }
 
             const ascending = state.sortDirection >= 0;
-            sortDirBtnEl.textContent = ascending ? "↑" : "↓";
+            sortDirBtnEl.textContent = ascending ? "???" : "???";
             sortDirBtnEl.title = ascending
                 ? "Ascending order (click to reverse)"
                 : "Descending order (click to reverse)";
@@ -3682,7 +4448,7 @@
                 const toggle = document.createElement("button");
                 toggle.type = "button";
                 toggle.className = "tree-toggle";
-                toggle.textContent = isExpanded ? "▾" : "▸";
+                toggle.textContent = isExpanded ? "???" : "???";
                 toggle.setAttribute("aria-label", isExpanded ? "Collapse folder" : "Expand folder");
                 toggle.addEventListener("click", (event) => {
                     event.stopPropagation();
@@ -3703,7 +4469,7 @@
             const button = document.createElement("button");
             button.type = "button";
             button.className = "tree-button" + (state.folderFilter === node.path ? " active" : "");
-            button.innerHTML = `<span class="tree-name">${node.path ? "📁 " + node.name : "🏠 Root"}</span>`;
+            button.innerHTML = `<span class="tree-name">${node.path ? "\u{1F4C1} " + node.name : "\u{1F3E0} Root"}</span>`;
             button.addEventListener("click", () => {
                 state.folderFilter = node.path;
                 if (node.path) {

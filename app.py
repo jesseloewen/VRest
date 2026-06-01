@@ -259,6 +259,7 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_NAME"] = session_cookie_name
 app.config["SESSION_PERMANENT"] = True
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=APP_SESSION_REMEMBER_DAYS)
+app.config["MAX_CONTENT_LENGTH"] = None  # No upload size limit
 
 catalog_lock = threading.Lock()
 catalog_tree: Dict = {"name": "Videos", "path": "", "folders": [], "files": []}
@@ -2465,6 +2466,87 @@ def api_data_delete_type(kind: str):
 
     payload = delete_cached_data_by_type(normalized_kind)
     return jsonify(payload)
+
+
+@app.get("/api/folders")
+def api_folders():
+    """Return a flat list of all existing sub-folder paths relative to VIDEO_ROOT."""
+    if CONFIG_ERROR:
+        return jsonify({"error": CONFIG_ERROR, "folders": []}), 400
+    if VIDEO_ROOT is None:
+        return jsonify({"folders": []})
+
+    folders: List[str] = [""]
+    for path in sorted(VIDEO_ROOT.rglob("*")):
+        if path.is_dir():
+            rel = normalize_rel_path(path.relative_to(VIDEO_ROOT).as_posix())
+            if rel:
+                folders.append(rel)
+    return jsonify({"folders": folders})
+
+
+@app.post("/api/upload")
+def api_upload():
+    """Accept a video file upload and save it to VIDEO_ROOT / folder / filename."""
+    if CONFIG_ERROR:
+        return jsonify({"error": CONFIG_ERROR}), 400
+    if VIDEO_ROOT is None:
+        return jsonify({"error": "VIDEO_FOLDER not configured"}), 400
+
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file_obj = request.files["file"]
+    raw_filename = (request.form.get("filename") or "").strip()
+    raw_folder = (request.form.get("folder") or "").strip()
+    create_folder = (request.form.get("createFolder") or "").strip()
+
+    # Determine the target folder path.
+    folder_rel = normalize_rel_path(create_folder) if create_folder else normalize_rel_path(raw_folder)
+
+    # Validate the filename.
+    if not raw_filename:
+        raw_filename = file_obj.filename or "upload"
+    # Strip any directory components from the filename.
+    safe_filename = Path(raw_filename).name.strip()
+    if not safe_filename:
+        return jsonify({"error": "Invalid filename"}), 400
+
+    # Ensure the extension is allowed.
+    ext = Path(safe_filename).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        # Try to preserve the original extension from the uploaded file.
+        orig_ext = Path(file_obj.filename or "").suffix.lower()
+        if orig_ext in ALLOWED_EXTENSIONS:
+            safe_filename = Path(safe_filename).stem + orig_ext
+            ext = orig_ext
+        else:
+            return jsonify({"error": f"Unsupported file type: {ext or '(none)'}. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"}), 400
+
+    # Build the full destination path.
+    if folder_rel:
+        dest_dir = (VIDEO_ROOT / folder_rel).resolve()
+        try:
+            dest_dir.relative_to(VIDEO_ROOT)
+        except ValueError:
+            return jsonify({"error": "Invalid folder path"}), 400
+    else:
+        dest_dir = VIDEO_ROOT
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = dest_dir / safe_filename
+
+    if dest_path.exists():
+        return jsonify({"error": f"A file named '{safe_filename}' already exists in that folder"}), 409
+
+    try:
+        file_obj.save(str(dest_path))
+    except OSError as exc:
+        return jsonify({"error": f"Failed to save file: {exc}"}), 500
+
+    rel_saved = normalize_rel_path(dest_path.relative_to(VIDEO_ROOT).as_posix())
+    schedule_catalog_refresh(force=True)
+    return jsonify({"ok": True, "path": rel_saved, "filename": safe_filename, "folder": folder_rel}), 201
 
 
 @app.post("/api/data/delete/<path:rel_path>")
