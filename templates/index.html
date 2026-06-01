@@ -1295,6 +1295,12 @@
             text-align: center;
         }
 
+        .player-shell.has-scrub-thumbnails .plyr__progress .plyr__tooltip,
+        .player-shell.has-scrub-thumbnails .plyr__tooltip,
+        .player-shell.has-scrub-thumbnails [data-plyr="seek-tooltip"] {
+            display: none !important;
+        }
+
         .plyr--full-ui input[type="range"] {
             color: var(--accent);
         }
@@ -1909,6 +1915,9 @@
             pointerId: null,
             previousRate: 1,
             wasPausedBeforeHold: false,
+            touchDelayTimer: null,
+            touchStartX: 0,
+            touchStartY: 0,
         };
 
         const FALLBACK_THUMB =
@@ -1945,7 +1954,11 @@
             scrubMetadata: null,
             scrubVideoPath: "",
             scrubProgressEl: null,
+            scrubSeekRangeEl: null,
             scrubListeners: null,
+            scrubDeferredSeekActive: false,
+            scrubDeferredSeekWasPlaying: false,
+            scrubDeferredSeekTime: null,
             lastLibrarySignature: "",
             folderExpansionInitialized: false,
             dialogPlaylist: [],
@@ -2368,6 +2381,47 @@
             playerShellEl.classList.toggle("is-fullscreen", Boolean(active));
         }
 
+        function clearHoldSpeedTouchDelay() {
+            if (holdSpeedState.touchDelayTimer) {
+                window.clearTimeout(holdSpeedState.touchDelayTimer);
+                holdSpeedState.touchDelayTimer = null;
+            }
+        }
+
+        function scheduleTouchHoldSpeed(event) {
+            if (!event.touches || event.touches.length !== 1 || holdSpeedState.active) {
+                clearHoldSpeedTouchDelay();
+                return;
+            }
+            if (shouldIgnoreHoldTarget(event.target)) {
+                clearHoldSpeedTouchDelay();
+                return;
+            }
+
+            const touch = event.touches[0];
+            holdSpeedState.touchStartX = Number(touch?.clientX || 0);
+            holdSpeedState.touchStartY = Number(touch?.clientY || 0);
+            clearHoldSpeedTouchDelay();
+
+            holdSpeedState.touchDelayTimer = window.setTimeout(() => {
+                holdSpeedState.touchDelayTimer = null;
+                startHoldSpeed({ target: event.target, button: 0 });
+            }, PREVIEW_HOLD_DELAY_MS);
+        }
+
+        function maybeCancelTouchHoldSpeedFromMove(event) {
+            if (!holdSpeedState.touchDelayTimer || !event.touches || !event.touches.length) {
+                return;
+            }
+
+            const touch = event.touches[0];
+            const dx = Math.abs(Number(touch?.clientX || 0) - holdSpeedState.touchStartX);
+            const dy = Math.abs(Number(touch?.clientY || 0) - holdSpeedState.touchStartY);
+            if (dx > HOLD_MOVE_CANCEL_PX || dy > HOLD_MOVE_CANCEL_PX) {
+                clearHoldSpeedTouchDelay();
+            }
+        }
+
         function startHoldSpeed(event) {
             if (event.button !== undefined && event.button !== 0) {
                 return;
@@ -2409,6 +2463,8 @@
         }
 
         function stopHoldSpeed(event) {
+            clearHoldSpeedTouchDelay();
+
             if (!holdSpeedState.active) {
                 return;
             }
@@ -2519,7 +2575,16 @@
             { passive: false }
         );
 
-        playerShellEl.addEventListener("pointerdown", startHoldSpeed, true);
+        playerShellEl.addEventListener(
+            "pointerdown",
+            (event) => {
+                if (event.pointerType === "touch") {
+                    return;
+                }
+                startHoldSpeed(event);
+            },
+            true
+        );
         playerShellEl.addEventListener("pointerup", stopHoldSpeed, true);
         playerShellEl.addEventListener("pointercancel", stopHoldSpeed, true);
         playerShellEl.addEventListener("pointerleave", stopHoldSpeed, true);
@@ -2537,12 +2602,21 @@
             "touchstart",
             (event) => {
                 if (!event.touches || event.touches.length !== 1 || holdSpeedState.active) {
+                    clearHoldSpeedTouchDelay();
                     return;
                 }
                 if (shouldIgnoreHoldTarget(event.target)) {
+                    clearHoldSpeedTouchDelay();
                     return;
                 }
-                startHoldSpeed(event);
+                scheduleTouchHoldSpeed(event);
+            },
+            { passive: true, capture: true }
+        );
+        playerShellEl.addEventListener(
+            "touchmove",
+            (event) => {
+                maybeCancelTouchHoldSpeedFromMove(event);
             },
             { passive: true, capture: true }
         );
@@ -2734,15 +2808,130 @@
             scrubPreviewEl.classList.remove("visible");
         }
 
-        function clearScrubBindings() {
-            if (!state.scrubProgressEl || !state.scrubListeners) {
+        function setScrubThumbnailUiEnabled(enabled) {
+            playerShellEl.classList.toggle("has-scrub-thumbnails", Boolean(enabled));
+        }
+
+        function getScrubSeekDuration() {
+            return getPlayableDuration() || Number(state.scrubMetadata?.durationSeconds || 0);
+        }
+
+        function scrubTimeFromRangeValue(rangeEl, rawValue) {
+            if (!(rangeEl instanceof HTMLInputElement)) {
+                return null;
+            }
+
+            const min = Number(rangeEl.min || 0);
+            const max = Number(rangeEl.max || 100);
+            if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) {
+                return null;
+            }
+
+            const value = Number(rawValue);
+            if (!Number.isFinite(value)) {
+                return null;
+            }
+
+            const ratio = Math.max(0, Math.min(1, (value - min) / (max - min)));
+            const duration = getScrubSeekDuration();
+            if (!Number.isFinite(duration) || duration <= 0) {
+                return 0;
+            }
+            return ratio * duration;
+        }
+
+        function beginDeferredSeekScrub(rangeEl) {
+            if (!(rangeEl instanceof HTMLInputElement)) {
                 return;
             }
+            if (state.scrubDeferredSeekActive) {
+                return;
+            }
+
+            state.scrubDeferredSeekActive = true;
+            state.scrubSeekRangeEl = rangeEl;
+            state.scrubDeferredSeekTime = scrubTimeFromRangeValue(rangeEl, rangeEl.value);
+            state.scrubDeferredSeekWasPlaying = !isPlayerPaused();
+
+            if (state.scrubDeferredSeekWasPlaying) {
+                pausePlayer();
+            }
+        }
+
+        function updateDeferredSeekFromRange(rangeEl, rawValue) {
+            if (!(rangeEl instanceof HTMLInputElement)) {
+                return;
+            }
+
+            if (!state.scrubDeferredSeekActive) {
+                beginDeferredSeekScrub(rangeEl);
+            }
+
+            const nextTime = scrubTimeFromRangeValue(rangeEl, rawValue);
+            if (nextTime === null) {
+                return;
+            }
+
+            state.scrubDeferredSeekTime = nextTime;
+        }
+
+        function commitDeferredSeekScrub() {
+            if (!state.scrubDeferredSeekActive) {
+                return;
+            }
+
+            const targetTime = Number(state.scrubDeferredSeekTime);
+            const shouldResumePlayback = Boolean(state.scrubDeferredSeekWasPlaying);
+
+            state.scrubDeferredSeekActive = false;
+            state.scrubDeferredSeekWasPlaying = false;
+            state.scrubDeferredSeekTime = null;
+
+            if (Number.isFinite(targetTime) && targetTime >= 0) {
+                const player = getActivePlayerTimeAndDuration();
+                player.setTime(targetTime);
+            }
+
+            if (shouldResumePlayback && dialogEl.open) {
+                playPlayerImmediately();
+            }
+        }
+
+        function cancelDeferredSeekScrub() {
+            state.scrubDeferredSeekActive = false;
+            state.scrubDeferredSeekWasPlaying = false;
+            state.scrubDeferredSeekTime = null;
+        }
+
+        function clearScrubBindings() {
+            if (!state.scrubProgressEl || !state.scrubListeners) {
+                cancelDeferredSeekScrub();
+                state.scrubSeekRangeEl = null;
+                return;
+            }
+
             state.scrubProgressEl.removeEventListener("mousemove", state.scrubListeners.mousemove);
             state.scrubProgressEl.removeEventListener("mouseleave", state.scrubListeners.mouseleave);
             state.scrubProgressEl.removeEventListener("touchmove", state.scrubListeners.touchmove);
             state.scrubProgressEl.removeEventListener("touchend", state.scrubListeners.touchend);
+
+            if (state.scrubSeekRangeEl) {
+                state.scrubSeekRangeEl.removeEventListener("pointerdown", state.scrubListeners.pointerdown, true);
+                state.scrubSeekRangeEl.removeEventListener("mousedown", state.scrubListeners.mousedown, true);
+                state.scrubSeekRangeEl.removeEventListener("touchstart", state.scrubListeners.touchstart, true);
+                state.scrubSeekRangeEl.removeEventListener("input", state.scrubListeners.input, true);
+                state.scrubSeekRangeEl.removeEventListener("change", state.scrubListeners.change, true);
+            }
+
+            window.removeEventListener("pointerup", state.scrubListeners.pointerup, true);
+            window.removeEventListener("pointercancel", state.scrubListeners.pointercancel, true);
+            window.removeEventListener("mouseup", state.scrubListeners.mouseup, true);
+            window.removeEventListener("touchend", state.scrubListeners.touchendWindow, true);
+            window.removeEventListener("touchcancel", state.scrubListeners.touchcancelWindow, true);
+
+            cancelDeferredSeekScrub();
             state.scrubProgressEl = null;
+            state.scrubSeekRangeEl = null;
             state.scrubListeners = null;
         }
 
@@ -2813,6 +3002,7 @@
             if (!progressEl) {
                 return;
             }
+            const seekRangeEl = progressEl.querySelector('input[type="range"]');
 
             const handlers = {
                 mousemove: (event) => {
@@ -2830,6 +3020,49 @@
                 touchend: () => {
                     hideScrubPreview();
                 },
+                pointerdown: (event) => {
+                    beginDeferredSeekScrub(event.currentTarget);
+                },
+                mousedown: (event) => {
+                    beginDeferredSeekScrub(event.currentTarget);
+                },
+                touchstart: (event) => {
+                    beginDeferredSeekScrub(event.currentTarget);
+                },
+                input: (event) => {
+                    if (!state.scrubDeferredSeekActive) {
+                        return;
+                    }
+
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    updateDeferredSeekFromRange(event.currentTarget, event.currentTarget?.value);
+                },
+                change: (event) => {
+                    if (!state.scrubDeferredSeekActive) {
+                        return;
+                    }
+
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    updateDeferredSeekFromRange(event.currentTarget, event.currentTarget?.value);
+                    commitDeferredSeekScrub();
+                },
+                pointerup: () => {
+                    commitDeferredSeekScrub();
+                },
+                pointercancel: () => {
+                    commitDeferredSeekScrub();
+                },
+                mouseup: () => {
+                    commitDeferredSeekScrub();
+                },
+                touchendWindow: () => {
+                    commitDeferredSeekScrub();
+                },
+                touchcancelWindow: () => {
+                    commitDeferredSeekScrub();
+                },
             };
 
             progressEl.addEventListener("mousemove", handlers.mousemove);
@@ -2837,13 +3070,29 @@
             progressEl.addEventListener("touchmove", handlers.touchmove, { passive: true });
             progressEl.addEventListener("touchend", handlers.touchend, { passive: true });
 
+            if (seekRangeEl) {
+                seekRangeEl.addEventListener("pointerdown", handlers.pointerdown, true);
+                seekRangeEl.addEventListener("mousedown", handlers.mousedown, true);
+                seekRangeEl.addEventListener("touchstart", handlers.touchstart, { capture: true, passive: true });
+                seekRangeEl.addEventListener("input", handlers.input, true);
+                seekRangeEl.addEventListener("change", handlers.change, true);
+            }
+
+            window.addEventListener("pointerup", handlers.pointerup, true);
+            window.addEventListener("pointercancel", handlers.pointercancel, true);
+            window.addEventListener("mouseup", handlers.mouseup, true);
+            window.addEventListener("touchend", handlers.touchendWindow, { capture: true, passive: true });
+            window.addEventListener("touchcancel", handlers.touchcancelWindow, { capture: true, passive: true });
+
             state.scrubProgressEl = progressEl;
+            state.scrubSeekRangeEl = seekRangeEl;
             state.scrubListeners = handlers;
         }
 
         async function loadScrubMetadataForVideo(videoPath) {
             state.scrubVideoPath = videoPath;
             state.scrubMetadata = null;
+            setScrubThumbnailUiEnabled(false);
             hideScrubPreview();
 
             try {
@@ -2855,7 +3104,14 @@
                 if (state.scrubVideoPath !== videoPath) {
                     return;
                 }
-                state.scrubMetadata = payload;
+                const hasScrubThumbnails =
+                    Array.isArray(payload?.frames) &&
+                    payload.frames.length > 0 &&
+                    Array.isArray(payload?.sheets) &&
+                    payload.sheets.length > 0;
+
+                state.scrubMetadata = hasScrubThumbnails ? payload : null;
+                setScrubThumbnailUiEnabled(hasScrubThumbnails);
                 bindScrubPreviewToProgress();
             } catch (_) {
                 // Ignore scrub preview failures and keep playback functional.
@@ -2865,7 +3121,9 @@
         function clearScrubPreviewState() {
             state.scrubMetadata = null;
             state.scrubVideoPath = "";
+            setScrubThumbnailUiEnabled(false);
             hideScrubPreview();
+            cancelDeferredSeekScrub();
             clearScrubBindings();
         }
 
