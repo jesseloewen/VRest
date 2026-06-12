@@ -40,7 +40,6 @@ Frontend behavior:
   - Embedded subtitle streams detected via `ffprobe`
 - Automatic conversion/extraction to `.vtt` subtitle cache files.
 - Password-protected login with persistent session cookies (optional).
-- Pinokio integration via `install.js`, `start.js`, and `reset.js`.
 
 ## Project Structure
 
@@ -50,10 +49,6 @@ Frontend behavior:
 - `static/`: Icons and web manifest.
 - `.env.example`: Environment template.
 - `requirements.txt`: Python dependencies.
-- `install.js`: Creates venv and installs Python dependencies.
-- `start.js`: Runs the server and exposes local URL in Pinokio.
-- `reset.js`: Removes `venv` and local `data` folder cache.
-- `pinokio.js`: Pinokio menu/runtime metadata.
 
 ## Requirements
 
@@ -130,12 +125,6 @@ python app.py
 ```
 
 Open `http://localhost:3232` (or your configured port).
-
-## Run (Pinokio)
-
-- `install.js`: bootstrap venv and install dependencies.
-- `start.js`: launch Flask server and publish local URL.
-- `reset.js`: delete venv and `data` cache folder, then recreate `data`.
 
 ## HTTP Endpoints
 
