@@ -334,6 +334,16 @@
             white-space: nowrap;
         }
 
+        .tree-count {
+            margin-left: auto;
+            font-size: 0.8rem;
+            color: rgba(180, 210, 200, 0.6);
+            background: rgba(90, 216, 184, 0.12);
+            border-radius: 10px;
+            padding: 1px 8px;
+            flex-shrink: 0;
+        }
+
         .tree-button:hover,
         .tree-button.active {
             background: rgba(90, 216, 184, 0.18);
@@ -844,6 +854,40 @@
             overflow: hidden;
         }
 
+        .card-download {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            z-index: 2;
+            border: 0;
+            background: rgba(3, 8, 10, 0.75);
+            color: #d6f7ee;
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            opacity: 0;
+            transition: opacity 150ms ease;
+        }
+
+        .card-download svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .video-card:hover .card-download,
+        .card-download:focus-visible {
+            opacity: 1;
+        }
+
+        .card-download:hover {
+            background: rgba(90, 216, 184, 0.28);
+        }
+
         .duration-pill {
             font-size: 0.74rem;
             color: #e9fff9;
@@ -1027,6 +1071,29 @@
             cursor: pointer;
             font-size: 20px;
             line-height: 1;
+        }
+
+        .dialog-download {
+            border: 0;
+            background: rgba(90, 216, 184, 0.22);
+            color: #d6f7ee;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+
+        .dialog-download svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .dialog-download:hover {
+            background: rgba(90, 216, 184, 0.38);
         }
 
         .player {
@@ -2333,6 +2400,13 @@
         <div class="dialog-head">
             <h3 id="dialogTitle">Now Playing</h3>
             <div class="dialog-tools">
+                <button class="dialog-download" id="dialogDownload" aria-label="Download video" title="Download">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                </button>
                 <button class="dialog-close" id="dialogClose" aria-label="Close">×</button>
             </div>
         </div>
@@ -2673,6 +2747,7 @@
         const scrubPreviewImageEl = document.getElementById("scrubPreviewImage");
         const scrubPreviewTimeEl = document.getElementById("scrubPreviewTime");
         const dialogCloseBtn = document.getElementById("dialogClose");
+        const dialogDownloadBtn = document.getElementById("dialogDownload");
         let plyrPlayer = null;
         let seekToastTimer = null;
         const gestureState = { lastTapAt: 0, lastSide: "" };
@@ -2745,6 +2820,12 @@
         const ITEM_SIZE_MOBILE_STORAGE_KEY = "vrest.item.size.mobile";
         const PREVIEW_MODE_STORAGE_KEY = "vrest.preview.mode.enabled";
         const AUTO_NEXT_STORAGE_KEY = "vrest.player.auto.next";
+        const URL_PARAM_FOLDER = "folder";
+        const URL_PARAM_SEARCH = "q";
+        const URL_PARAM_SORT = "sort";
+        const URL_PARAM_DIR = "dir";
+        const URL_PARAM_SIZE = "size";
+        const URL_PARAM_VIDEO = "v";
         const ITEM_SIZE_PRESETS = {
             xs: 180,
             sm: 220,
@@ -2829,6 +2910,11 @@
         });
 
         dialogCloseBtn.addEventListener("click", closeDialog);
+        dialogDownloadBtn.addEventListener("click", () => {
+            if (state.dialogCurrentPath) {
+                triggerDownload(state.dialogCurrentPath);
+            }
+        });
         dialogEl.addEventListener("cancel", (event) => {
             event.preventDefault();
         });
@@ -3405,7 +3491,10 @@
             const videoSrc = `/api/video/${encodePath(meta.path)}`;
             const subtitleTracks = buildSubtitleTracks(meta);
             const preserveCurrentPlaylist = Boolean(options.preserveCurrentPlaylist);
-            state.dialogCurrentPath = String(meta?.path || "");
+            const suppressURL = Boolean(options.suppressURL);
+            const videoPath = String(meta?.path || "");
+            const wasAlreadyOpen = dialogEl.open;
+            state.dialogCurrentPath = videoPath;
 
             syncDialogPlaylist(meta, preserveCurrentPlaylist);
             updateDialogNavButtons();
@@ -3437,6 +3526,10 @@
             playPlayerImmediately();
             bindScrubPreviewToProgress();
             loadScrubMetadataForVideo(meta.path);
+
+            if (!suppressURL) {
+                syncURL({ push: !wasAlreadyOpen, videoPath });
+            }
         }
 
         function closeDialog() {
@@ -3463,6 +3556,7 @@
             setPlayerPlaybackState(false);
             setPlayerFullscreenMode(false);
             dialogEl.close();
+            syncURL();
             window.requestAnimationFrame(() => {
                 resumeVisiblePreviewsInPreviewMode();
             });
@@ -3473,6 +3567,16 @@
                 .split("/")
                 .map((part) => encodeURIComponent(part))
                 .join("/");
+        }
+
+        function triggerDownload(filePath) {
+            const url = `/api/download/${encodePath(filePath)}`;
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.style.display = "none";
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
         }
 
         function subtitleTrackUrl(videoPath, trackId) {
@@ -3540,6 +3644,172 @@
 
             return bucket;
         }
+
+        function countVideosInNode(node) {
+            if (!node) {
+                return 0;
+            }
+            let count = Array.isArray(node.files) ? node.files.length : 0;
+            const childFolders = Array.isArray(node.folders) ? node.folders : [];
+            for (const child of childFolders) {
+                count += countVideosInNode(child);
+            }
+            return count;
+        }
+
+        function readStateFromURL() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                folder: params.get(URL_PARAM_FOLDER) || "",
+                search: params.get(URL_PARAM_SEARCH) || "",
+                sort: params.get(URL_PARAM_SORT) || "",
+                dir: params.get(URL_PARAM_DIR) || "",
+                size: params.get(URL_PARAM_SIZE) || "",
+                video: params.get(URL_PARAM_VIDEO) || "",
+            };
+        }
+
+        function syncURL({ push, videoPath } = {}) {
+            const params = new URLSearchParams();
+
+            if (state.folderFilter) {
+                params.set(URL_PARAM_FOLDER, state.folderFilter);
+            }
+            if (state.searchQuery) {
+                params.set(URL_PARAM_SEARCH, state.searchQuery);
+            }
+            if (state.sortKey && state.sortKey !== "random") {
+                params.set(URL_PARAM_SORT, state.sortKey);
+            }
+            if (state.sortKey !== "random") {
+                const defaultDir = defaultSortDirection(state.sortKey);
+                if (state.sortDirection !== defaultDir) {
+                    params.set(URL_PARAM_DIR, state.sortDirection >= 0 ? "asc" : "desc");
+                }
+            }
+            if (state.itemSizeKey && state.itemSizeKey !== "sm") {
+                params.set(URL_PARAM_SIZE, state.itemSizeKey);
+            }
+
+            const videoParam = videoPath !== undefined ? videoPath : (state.dialogCurrentPath || "");
+            if (videoParam) {
+                params.set(URL_PARAM_VIDEO, videoParam);
+            }
+
+            const qs = params.toString();
+            const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+
+            if (push) {
+                window.history.pushState(null, "", url);
+            } else {
+                window.history.replaceState(null, "", url);
+            }
+        }
+
+        function applyStateFromURL(options = {}) {
+            const urlState = readStateFromURL();
+            const isPopstate = Boolean(options.isPopstate);
+
+            if (urlState.folder !== state.folderFilter) {
+                state.folderFilter = urlState.folder;
+                renderFolders();
+            }
+
+            if (urlState.search !== state.searchQuery) {
+                state.searchQuery = urlState.search;
+                searchInputEl.value = urlState.search;
+                updateSearchClearButton();
+            }
+
+            if (urlState.sort && SORT_KEYS.has(urlState.sort)) {
+                if (state.sortKey !== urlState.sort) {
+                    state.sortKey = urlState.sort;
+                    state.sortDirection = urlState.dir === "desc" ? -1 : (urlState.dir === "asc" ? 1 : defaultSortDirection(urlState.sort));
+                    sortSelectEl.value = urlState.sort;
+                    saveSortPreferences();
+                    updateSortDirectionButton();
+                } else if (urlState.sort !== "random") {
+                    const dir = urlState.dir === "desc" ? -1 : (urlState.dir === "asc" ? 1 : defaultSortDirection(urlState.sort));
+                    if (state.sortDirection !== dir) {
+                        state.sortDirection = dir;
+                        saveSortPreferences();
+                        updateSortDirectionButton();
+                    }
+                }
+            } else if (!urlState.sort) {
+                if (state.sortKey !== "random") {
+                    state.sortKey = "random";
+                    state.sortDirection = 1;
+                    sortSelectEl.value = "random";
+                    saveSortPreferences();
+                    updateSortDirectionButton();
+                }
+            }
+
+            if (urlState.size && ITEM_SIZE_KEYS.has(urlState.size)) {
+                if (state.itemSizeKey !== urlState.size) {
+                    applyItemSize(urlState.size);
+                    saveItemSizePreference();
+                }
+            } else if (!urlState.size && state.itemSizeKey !== "sm") {
+                applyItemSize("sm");
+                saveItemSizePreference();
+            }
+
+            if (state.videos.length > 0) {
+                renderGrid();
+            }
+
+            const videoPathFromURL = urlState.video;
+            const dialogHasVideo = Boolean(state.dialogCurrentPath);
+
+            if (videoPathFromURL && !dialogHasVideo) {
+                const videoMeta = state.videos.find(
+                    (v) => String(v?.path || "") === videoPathFromURL
+                );
+                if (videoMeta) {
+                    openVideoDialog(videoMeta, { suppressURL: isPopstate });
+                }
+            } else if (!videoPathFromURL && dialogHasVideo) {
+                if (isPopstate) {
+                    stopHoldSpeed();
+                    clearScrubPreviewState();
+                    if (plyrPlayer) {
+                        plyrPlayer.stop();
+                        plyrPlayer.source = { type: "video", sources: [], tracks: [] };
+                    } else {
+                        dialogPlayerEl.pause();
+                        dialogPlayerEl.removeAttribute("src");
+                        clearNativeTracks();
+                        dialogPlayerEl.load();
+                    }
+                    state.dialogPlaylist = [];
+                    state.dialogPlaylistIndex = -1;
+                    state.dialogCurrentPath = "";
+                    updateDialogNavButtons();
+                    setDialogNavControlsVisible(true);
+                    setPlayerPlaybackState(false);
+                    setPlayerFullscreenMode(false);
+                    dialogEl.close();
+                    window.requestAnimationFrame(() => {
+                        resumeVisiblePreviewsInPreviewMode();
+                    });
+                } else {
+                    closeDialog();
+                }
+            } else if (videoPathFromURL && dialogHasVideo && state.dialogCurrentPath !== videoPathFromURL) {
+                const videoMeta = state.videos.find(
+                    (v) => String(v?.path || "") === videoPathFromURL
+                );
+                if (videoMeta) {
+                    openVideoDialog(videoMeta, { suppressURL: isPopstate });
+                }
+            }
+        }
+
+        window.addEventListener("popstate", () => {
+            applyStateFromURL({ isPopstate: true });
+        });
 
         function formatDuration(seconds) {
             const total = Number(seconds);
@@ -4410,6 +4680,7 @@
                 state.folderFilter = "";
                 renderFolders();
                 renderGrid();
+                syncURL();
             });
             breadcrumbsEl.appendChild(rootCrumb);
 
@@ -4429,6 +4700,7 @@
                     state.folderFilter = target;
                     renderFolders();
                     renderGrid();
+                    syncURL();
                 });
                 breadcrumbsEl.appendChild(crumb);
             }
@@ -4469,7 +4741,8 @@
             const button = document.createElement("button");
             button.type = "button";
             button.className = "tree-button" + (state.folderFilter === node.path ? " active" : "");
-            button.innerHTML = `<span class="tree-name">${node.path ? "\u{1F4C1} " + node.name : "\u{1F3E0} Root"}</span>`;
+            const videoCount = countVideosInNode(node);
+            button.innerHTML = `<span class="tree-name">${node.path ? "\u{1F4C1} " + node.name : "\u{1F3E0} Root"}</span><span class="tree-count">${videoCount}</span>`;
             button.addEventListener("click", () => {
                 state.folderFilter = node.path;
                 if (node.path) {
@@ -4483,6 +4756,7 @@
                 renderFolders();
                 renderGrid();
                 closeSidebarIfMobile();
+                syncURL();
             });
             row.appendChild(button);
             li.appendChild(row);
@@ -4741,6 +5015,13 @@
                     <video class="card-preview" muted loop playsinline preload="none"></video>
                     <div class="preview-loader">Generating preview...</div>
                     <div class="preview-error">Preview failed</div>
+                    <button class="card-download" aria-label="Download" title="Download" data-path="${meta.path}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                    </button>
                 </div>
                 <div class="card-body">
                     <h4 class="card-title">${fileTitle(meta.name)}</h4>
@@ -4750,6 +5031,15 @@
                     </div>
                 </div>
             `;
+
+            const cardDownloadBtn = card.querySelector(".card-download");
+            if (cardDownloadBtn) {
+                cardDownloadBtn.addEventListener("click", (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    triggerDownload(meta.path);
+                });
+            }
 
             const img = card.querySelector("img.card-thumb");
             img.dataset.thumbSrc = thumbSrc;
@@ -5235,6 +5525,7 @@
             state.searchQuery = searchInputEl.value;
             updateSearchClearButton();
             renderGrid();
+            syncURL();
         });
 
         clearSearchBtnEl.addEventListener("click", () => {
@@ -5246,6 +5537,7 @@
             updateSearchClearButton();
             renderGrid();
             searchInputEl.focus();
+            syncURL();
         });
 
         sortSelectEl.addEventListener("change", () => {
@@ -5261,11 +5553,13 @@
             saveSortPreferences();
             updateSortDirectionButton();
             renderGrid();
+            syncURL();
         });
 
         itemSizeSelectEl.addEventListener("change", () => {
             applyItemSize(itemSizeSelectEl.value);
             saveItemSizePreference();
+            syncURL();
         });
 
         previewModeToggleEl.addEventListener("change", () => {
@@ -5278,6 +5572,7 @@
             saveSortPreferences();
             updateSortDirectionButton();
             renderGrid();
+            syncURL();
         });
 
         rerandomizeBtnEl.addEventListener("click", () => {
@@ -5330,10 +5625,39 @@
         loadItemSizePreference();
         loadPreviewModePreference();
         loadAutoNextPreference();
+
+        const initURLState = readStateFromURL();
+        if (initURLState.sort && SORT_KEYS.has(initURLState.sort)) {
+            state.sortKey = initURLState.sort;
+            state.sortDirection = initURLState.dir === "desc" ? -1 : (initURLState.dir === "asc" ? 1 : defaultSortDirection(initURLState.sort));
+            sortSelectEl.value = initURLState.sort;
+            saveSortPreferences();
+        }
+        if (initURLState.size && ITEM_SIZE_KEYS.has(initURLState.size)) {
+            applyItemSize(initURLState.size);
+            saveItemSizePreference();
+        }
+        if (initURLState.search) {
+            state.searchQuery = initURLState.search;
+            searchInputEl.value = initURLState.search;
+        }
+        if (initURLState.folder) {
+            state.folderFilter = initURLState.folder;
+        }
+
         updateSearchClearButton();
         updateSortDirectionButton();
         initProPlayer();
-        loadLibrary();
+        loadLibrary().then(() => {
+            if (initURLState.video) {
+                const videoMeta = state.videos.find(
+                    (v) => String(v?.path || "") === initURLState.video
+                );
+                if (videoMeta) {
+                    openVideoDialog(videoMeta);
+                }
+            }
+        });
         loadGenerationStatuses();
     </script>
 </body>

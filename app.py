@@ -2347,6 +2347,21 @@ def api_video(rel_path: str):
     return send_file(video_path, conditional=True)
 
 
+@app.get("/api/download/<path:rel_path>")
+def api_download(rel_path: str):
+    normalized = normalize_rel_path(rel_path)
+    video_path = resolve_video_path(normalized)
+    if video_path is None:
+        abort(404)
+
+    return send_file(
+        video_path,
+        as_attachment=True,
+        download_name=video_path.name,
+        conditional=True,
+    )
+
+
 @app.get("/api/subtitle/<path:rel_path>/<track_id>.vtt")
 def api_subtitle(rel_path: str, track_id: str):
     normalized = normalize_rel_path(rel_path)
