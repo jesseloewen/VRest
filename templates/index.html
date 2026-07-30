@@ -1372,6 +1372,53 @@
             color: var(--accent);
         }
 
+        .plyr__menu__container {
+            white-space: normal;
+            min-width: max-content;
+            max-width: calc(100vw - 16px);
+            right: -6px;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            max-height: 380px;
+        }
+
+        .plyr__menu__container [role="menu"] {
+            min-width: fit-content;
+        }
+
+        .plyr__menu__container [role="menuitemradio"] {
+            white-space: nowrap;
+            padding-right: 28px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        @media (max-width: 900px) {
+            .plyr__menu__container {
+                max-width: calc(100vw - 12px);
+                max-height: 170px;
+                right: -3px;
+                font-size: 13px;
+            }
+
+            .plyr__menu__container [role="menuitemradio"] {
+                padding: 7px 24px 7px 10px;
+            }
+        }
+
+        @media (max-width: 360px) {
+            .plyr__menu__container {
+                max-width: calc(100vw - 8px);
+                max-height: 140px;
+                right: -2px;
+                font-size: 12px;
+            }
+
+            .plyr__menu__container [role="menuitemradio"] {
+                padding: 6px 16px 6px 8px;
+            }
+        }
+
         .player-shell.nav-controls-hidden .plyr__controls {
             opacity: 0;
             pointer-events: none;
@@ -2815,6 +2862,23 @@
             touchStartX: 0,
             touchStartY: 0,
         };
+        const pinchState = {
+            active: false,
+            initialDistance: 0,
+            initialScale: 1,
+            initialZoomX: 0,
+            initialZoomY: 0,
+            centerX: 0,
+            centerY: 0,
+        };
+        const panState = {
+            active: false,
+            pointerId: null,
+            startX: 0,
+            startY: 0,
+            startZoomX: 0,
+            startZoomY: 0,
+        };
 
         const FALLBACK_THUMB =
             "data:image/svg+xml;utf8," +
@@ -2855,6 +2919,9 @@
             scrubDeferredSeekActive: false,
             scrubDeferredSeekWasPlaying: false,
             scrubDeferredSeekTime: null,
+            zoomScale: 1,
+            zoomX: 0,
+            zoomY: 0,
             lastLibrarySignature: "",
             folderExpansionInitialized: false,
             dialogPlaylist: [],
@@ -3301,6 +3368,65 @@
             playerShellEl.classList.toggle("is-fullscreen", Boolean(active));
         }
 
+        function getZoomTarget() {
+            return playerShellEl.querySelector(".plyr") || dialogPlayerEl;
+        }
+
+        function applyZoomTransform() {
+            const target = getZoomTarget();
+            if (!target) return;
+            if (state.zoomScale > 1) {
+                target.style.transform = `scale(${state.zoomScale}) translate(${state.zoomX}px, ${state.zoomY}px)`;
+                target.style.transformOrigin = "center center";
+            } else {
+                target.style.transform = "";
+                target.style.transformOrigin = "";
+            }
+        }
+
+        function isZoomed() {
+            return state.zoomScale > 1.001;
+        }
+
+        function zoomClampedXY(scale, tx, ty) {
+            if (scale <= 1) return { x: 0, y: 0 };
+            const ov = (scale - 1) / (scale * 2);
+            const rect = playerShellEl.getBoundingClientRect();
+            if (!rect.width || !rect.height) return { x: tx, y: ty };
+            const maxX = ov * rect.width;
+            const maxY = ov * rect.height;
+            return {
+                x: Math.max(-maxX, Math.min(maxX, Number(tx) || 0)),
+                y: Math.max(-maxY, Math.min(maxY, Number(ty) || 0)),
+            };
+        }
+
+        function setVideoZoom(scale, originX, originY) {
+            const clamped = Math.max(1, Math.min(4, Number(scale) || 1));
+            if (originX !== undefined && originY !== undefined && clamped !== state.zoomScale) {
+                const rect = playerShellEl.getBoundingClientRect();
+                if (rect.width && rect.height) {
+                    const cx = originX - rect.left - rect.width / 2;
+                    const cy = originY - rect.top - rect.height / 2;
+                    const ratio = clamped / Math.max(state.zoomScale, 1);
+                    state.zoomX = cx - (cx - state.zoomX) * ratio;
+                    state.zoomY = cy - (cy - state.zoomY) * ratio;
+                }
+            }
+            state.zoomScale = clamped;
+            var c = zoomClampedXY(clamped, state.zoomX, state.zoomY);
+            state.zoomX = c.x;
+            state.zoomY = c.y;
+            applyZoomTransform();
+        }
+
+        function resetVideoZoom() {
+            state.zoomScale = 1;
+            state.zoomX = 0;
+            state.zoomY = 0;
+            applyZoomTransform();
+        }
+
         function clearHoldSpeedTouchDelay() {
             if (holdSpeedState.touchDelayTimer) {
                 window.clearTimeout(holdSpeedState.touchDelayTimer);
@@ -3444,6 +3570,13 @@
             return "";
         }
 
+        function getTouchDistance(touches) {
+            if (!touches || touches.length < 2) return 0;
+            const dx = touches[0].clientX - touches[1].clientX;
+            const dy = touches[0].clientY - touches[1].clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
         playerShellEl.addEventListener("dblclick", (event) => {
             if (shouldIgnoreHoldTarget(event.target)) {
                 return;
@@ -3501,14 +3634,49 @@
                 if (event.pointerType === "touch") {
                     return;
                 }
+                if (shouldIgnoreHoldTarget(event.target)) return;
+                if (isZoomed()) {
+                    event.preventDefault();
+                    panState.active = true;
+                    panState.pointerId = event.pointerId;
+                    panState.startX = event.clientX;
+                    panState.startY = event.clientY;
+                    panState.startZoomX = state.zoomX;
+                    panState.startZoomY = state.zoomY;
+                    return;
+                }
                 startHoldSpeed(event);
             },
             true
         );
+        function endPan() {
+            panState.active = false;
+        }
         playerShellEl.addEventListener("pointerup", stopHoldSpeed, true);
         playerShellEl.addEventListener("pointercancel", stopHoldSpeed, true);
         playerShellEl.addEventListener("pointerleave", stopHoldSpeed, true);
         playerShellEl.addEventListener("lostpointercapture", stopHoldSpeed, true);
+        window.addEventListener(
+            "pointermove",
+            (event) => {
+                if (!panState.active) return;
+                if (!isZoomed()) { endPan(); return; }
+                event.preventDefault();
+                state.zoomX = panState.startZoomX + (event.clientX - panState.startX);
+                state.zoomY = panState.startZoomY + (event.clientY - panState.startY);
+                var c = zoomClampedXY(state.zoomScale, state.zoomX, state.zoomY);
+                state.zoomX = c.x;
+                state.zoomY = c.y;
+                applyZoomTransform();
+            },
+            true
+        );
+        window.addEventListener("pointerup", (event) => {
+            if (panState.active && event.pointerId === panState.pointerId) {
+                endPan();
+            }
+        }, true);
+        window.addEventListener("pointercancel", endPan, true);
         dialogPlayerEl.addEventListener(
             "click",
             (event) => {
@@ -3528,10 +3696,28 @@
             }
         });
         playerShellEl.addEventListener(
+            "wheel",
+            (event) => {
+                if (shouldIgnoreHoldTarget(event.target)) return;
+                event.preventDefault();
+                setVideoZoom(state.zoomScale + (-event.deltaY * 0.002), event.clientX, event.clientY);
+            },
+            { passive: false }
+        );
+        playerShellEl.addEventListener(
             "touchstart",
             (event) => {
                 if (!event.touches || event.touches.length !== 1 || holdSpeedState.active) {
                     clearHoldSpeedTouchDelay();
+                    return;
+                }
+                if (state.isMobile && playerShellEl.classList.contains("is-fullscreen") && isZoomed()) {
+                    var touch = event.touches[0];
+                    panState.active = true;
+                    panState.startX = touch.clientX;
+                    panState.startY = touch.clientY;
+                    panState.startZoomX = state.zoomX;
+                    panState.startZoomY = state.zoomY;
                     return;
                 }
                 if (shouldIgnoreHoldTarget(event.target)) {
@@ -3545,14 +3731,27 @@
         playerShellEl.addEventListener(
             "touchmove",
             (event) => {
+                if (panState.active && state.isMobile && isZoomed()) {
+                    if (!event.touches || event.touches.length !== 1) { endPan(); return; }
+                    event.preventDefault();
+                    var touch = event.touches[0];
+                    state.zoomX = panState.startZoomX + (touch.clientX - panState.startX);
+                    state.zoomY = panState.startZoomY + (touch.clientY - panState.startY);
+                    var c = zoomClampedXY(state.zoomScale, state.zoomX, state.zoomY);
+                    state.zoomX = c.x;
+                    state.zoomY = c.y;
+                    applyZoomTransform();
+                    return;
+                }
                 maybeCancelTouchHoldSpeedFromMove(event);
             },
-            { passive: true, capture: true }
+            { passive: false, capture: true }
         );
         playerShellEl.addEventListener(
             "touchend",
             () => {
                 stopHoldSpeed();
+                endPan();
             },
             { passive: true, capture: true }
         );
@@ -3563,6 +3762,64 @@
             },
             { passive: true, capture: true }
         );
+
+        function endPinch() {
+            pinchState.active = false;
+        }
+
+        function getTouchMidpoint(touches) {
+            if (!touches || touches.length < 2) return { x: 0, y: 0 };
+            return {
+                x: (touches[0].clientX + touches[1].clientX) / 2,
+                y: (touches[0].clientY + touches[1].clientY) / 2,
+            };
+        }
+
+        playerShellEl.addEventListener(
+            "touchstart",
+            (event) => {
+                if (!state.isMobile) return;
+                if (!playerShellEl.classList.contains("is-fullscreen")) return;
+                if (!event.touches || event.touches.length !== 2) return;
+                var mp = getTouchMidpoint(event.touches);
+                pinchState.active = true;
+                pinchState.initialDistance = getTouchDistance(event.touches);
+                pinchState.initialScale = state.zoomScale;
+                pinchState.initialZoomX = state.zoomX;
+                pinchState.initialZoomY = state.zoomY;
+                pinchState.centerX = mp.x;
+                pinchState.centerY = mp.y;
+            },
+            { passive: true }
+        );
+        playerShellEl.addEventListener(
+            "touchmove",
+            (event) => {
+                if (!pinchState.active) return;
+                if (!event.touches || event.touches.length !== 2) {
+                    endPinch();
+                    return;
+                }
+                event.preventDefault();
+                var distance = getTouchDistance(event.touches);
+                if (pinchState.initialDistance <= 0) return;
+                var scale = pinchState.initialScale * (distance / pinchState.initialDistance);
+                var mp = getTouchMidpoint(event.touches);
+                var rect = playerShellEl.getBoundingClientRect();
+                var cx = mp.x - rect.left - rect.width / 2;
+                var cy = mp.y - rect.top - rect.height / 2;
+                var ratio = scale / Math.max(pinchState.initialScale, 1);
+                var newX = cx - (cx - pinchState.initialZoomX) * ratio;
+                var newY = cy - (cy - pinchState.initialZoomY) * ratio;
+                setVideoZoom(scale);
+                state.zoomX = newX;
+                state.zoomY = newY;
+                applyZoomTransform();
+            },
+            { passive: false }
+        );
+        playerShellEl.addEventListener("touchend", endPinch, { passive: true });
+        playerShellEl.addEventListener("touchcancel", endPinch, { passive: true });
 
         async function openVideoDialog(meta, options = {}) {
             const videoSrc = `/api/video/${encodePath(meta.path)}`;
@@ -3577,6 +3834,7 @@
             updateDialogNavButtons();
             setDialogNavControlsVisible(true);
             setPlayerPlaybackState(false);
+            resetVideoZoom();
 
             const title = fileTitle(meta.name);
             dialogTitleEl.textContent = title;
@@ -3611,6 +3869,9 @@
 
         function closeDialog() {
             stopHoldSpeed();
+            endPinch();
+            endPan();
+            resetVideoZoom();
             clearScrubPreviewState();
             if (plyrPlayer) {
                 plyrPlayer.stop();
