@@ -1372,6 +1372,54 @@
             color: var(--accent);
         }
 
+        .player-shell.nav-controls-hidden .plyr__controls {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .center-play-btn {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 68px;
+            height: 68px;
+            border-radius: 999px;
+            background: rgba(5, 10, 14, 0.72);
+            border: 2px solid rgba(141, 208, 197, 0.55);
+            color: #e7fff7;
+            cursor: pointer;
+            z-index: 5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 120ms ease, transform 120ms ease, background-color 120ms ease, border-color 120ms ease;
+        }
+
+        .center-play-btn svg {
+            display: block;
+        }
+
+        .player-shell.is-playing:not(.nav-controls-hidden) .center-play-btn {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .center-play-btn:hover {
+            background: rgba(15, 28, 32, 0.85);
+            border-color: rgba(141, 208, 197, 0.75);
+            transform: translate(-50%, -50%) scale(1.06);
+        }
+
+        @media (max-width: 900px) {
+            .center-play-btn {
+                width: 56px;
+                height: 56px;
+            }
+        }
+
         .empty-state {
             margin-top: 24px;
             color: #b5d7cc;
@@ -2419,6 +2467,12 @@
                 <span>Auto Play</span>
             </label>
             <div class="player-fullscreen-title" id="fullscreenTitle" aria-hidden="true"></div>
+            <button type="button" class="center-play-btn" id="centerPlayBtn" aria-label="Pause">
+                <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M11 7H8V21H11V7Z" fill="currentColor"/>
+                    <path d="M20 7H17V21H20V7Z" fill="currentColor"/>
+                </svg>
+            </button>
             <video id="dialogPlayer" class="player" controls playsinline preload="metadata"></video>
             <div class="hold-speed-indicator" id="holdSpeedIndicator" aria-hidden="true">2x speed</div>
             <div class="seek-toast" id="seekToast"></div>
@@ -2746,6 +2800,7 @@
         const scrubPreviewEl = document.getElementById("scrubPreview");
         const scrubPreviewImageEl = document.getElementById("scrubPreviewImage");
         const scrubPreviewTimeEl = document.getElementById("scrubPreviewTime");
+        const centerPlayBtnEl = document.getElementById("centerPlayBtn");
         const dialogCloseBtn = document.getElementById("dialogClose");
         const dialogDownloadBtn = document.getElementById("dialogDownload");
         let plyrPlayer = null;
@@ -2949,6 +3004,8 @@
                     "play",
                     "fast-forward",
                     "progress",
+                    "current-time",
+                    "duration",
                     "mute",
                     "captions",
                     "settings",
@@ -3171,7 +3228,7 @@
             }
             return Boolean(
                 target.closest(
-                    ".plyr__controls, .plyr__menu, .plyr__control, .plyr__progress, .plyr__volume, .dialog-head, .dialog-tools, .dialog-close, .player-nav-btn, .player-auto-next"
+                    ".plyr__controls, .plyr__menu, .plyr__control, .plyr__progress, .plyr__volume, .dialog-head, .dialog-tools, .dialog-close, .player-nav-btn, .player-auto-next, .center-play-btn"
                 )
             );
         }
@@ -3223,6 +3280,17 @@
 
         function setDialogNavControlsVisible(visible) {
             playerShellEl.classList.toggle("nav-controls-hidden", !visible);
+        }
+
+        function togglePlayerControls() {
+            const hidden = playerShellEl.classList.contains("nav-controls-hidden");
+            if (hidden) {
+                setDialogNavControlsVisible(true);
+                if (plyrPlayer) plyrPlayer.toggleControls(true);
+            } else {
+                setDialogNavControlsVisible(false);
+                if (plyrPlayer) plyrPlayer.toggleControls(false);
+            }
         }
 
         function setPlayerPlaybackState(isPlaying) {
@@ -3444,12 +3512,21 @@
         dialogPlayerEl.addEventListener(
             "click",
             (event) => {
-                // Prevent direct video-surface click from toggling play/pause.
                 event.preventDefault();
                 event.stopPropagation();
+                togglePlayerControls();
             },
             true
         );
+        centerPlayBtnEl.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (isPlayerPaused()) {
+                playPlayerImmediately();
+            } else {
+                pausePlayer();
+            }
+        });
         playerShellEl.addEventListener(
             "touchstart",
             (event) => {
@@ -3573,6 +3650,7 @@
             const url = `/api/download/${encodePath(filePath)}`;
             const anchor = document.createElement("a");
             anchor.href = url;
+            anchor.download = filePath.split("/").pop();
             anchor.style.display = "none";
             document.body.appendChild(anchor);
             anchor.click();
