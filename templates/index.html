@@ -561,6 +561,9 @@
             overflow-x: hidden;
             max-height: none;
             flex: 1;
+            min-height: 0;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
         }
 
         .generation-table {
@@ -1588,6 +1591,15 @@
 
             .generation-panel {
                 width: min(95vw, 460px);
+                overflow-y: auto;
+                overflow-x: hidden;
+                -webkit-overflow-scrolling: touch;
+                overscroll-behavior: contain;
+            }
+
+            .generation-table-wrap {
+                overflow: visible;
+                flex: none;
             }
 
             .app-shell.generation-open .generation-panel {
