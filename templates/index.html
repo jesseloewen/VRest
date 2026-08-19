@@ -1448,11 +1448,17 @@
             transition: opacity 120ms ease, transform 120ms ease, background-color 120ms ease, border-color 120ms ease;
         }
 
-        .center-play-btn svg {
-            display: block;
+        .center-play-icon {
+            transition: opacity 120ms ease;
         }
 
-        .player-shell.is-playing:not(.nav-controls-hidden) .center-play-btn {
+        .center-play-icon-play { display: block; }
+        .center-play-icon-pause { display: none; }
+
+        .player-shell.is-playing .center-play-icon-play { display: none; }
+        .player-shell.is-playing .center-play-icon-pause { display: block; }
+
+        .player-shell:not(.nav-controls-hidden) .center-play-btn {
             opacity: 1;
             pointer-events: auto;
         }
@@ -2526,8 +2532,11 @@
                 <span>Auto Play</span>
             </label>
             <div class="player-fullscreen-title" id="fullscreenTitle" aria-hidden="true"></div>
-            <button type="button" class="center-play-btn" id="centerPlayBtn" aria-label="Pause">
-                <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <button type="button" class="center-play-btn" id="centerPlayBtn" aria-label="Play">
+                <svg class="center-play-icon center-play-icon-play" width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M8 5V23L22 14L8 5Z" fill="currentColor"/>
+                </svg>
+                <svg class="center-play-icon center-play-icon-pause" width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M11 7H8V21H11V7Z" fill="currentColor"/>
                     <path d="M20 7H17V21H20V7Z" fill="currentColor"/>
                 </svg>
@@ -3078,7 +3087,6 @@
 
             const controls = state.isMobile
                 ? [
-                    "play-large",
                     "rewind",
                     "play",
                     "fast-forward",
@@ -3091,7 +3099,6 @@
                     "fullscreen",
                 ]
                 : [
-                    "play-large",
                     "rewind",
                     "play",
                     "fast-forward",
@@ -3111,6 +3118,7 @@
                 speed: { selected: 1, options: PLAYBACK_SPEED_OPTIONS },
                 controls,
                 clickToPlay: false,
+                hideControls: false,
                 fullscreen: {
                     enabled: true,
                     fallback: true,
@@ -3140,8 +3148,6 @@
                 setDialogNavControlsVisible(true);
                 refreshScrubProgressBinding();
             });
-            plyrPlayer.on("controlsshown", () => setDialogNavControlsVisible(true));
-            plyrPlayer.on("controlshidden", () => setDialogNavControlsVisible(false));
             plyrPlayer.on("play", () => setPlayerPlaybackState(true));
             plyrPlayer.on("pause", () => setPlayerPlaybackState(false));
             plyrPlayer.on("ended", () => setPlayerPlaybackState(false));
@@ -3363,17 +3369,12 @@
 
         function togglePlayerControls() {
             const hidden = playerShellEl.classList.contains("nav-controls-hidden");
-            if (hidden) {
-                setDialogNavControlsVisible(true);
-                if (plyrPlayer) plyrPlayer.toggleControls(true);
-            } else {
-                setDialogNavControlsVisible(false);
-                if (plyrPlayer) plyrPlayer.toggleControls(false);
-            }
+            setDialogNavControlsVisible(hidden);
         }
 
         function setPlayerPlaybackState(isPlaying) {
             playerShellEl.classList.toggle("is-playing", Boolean(isPlaying));
+            centerPlayBtnEl.setAttribute("aria-label", isPlaying ? "Pause" : "Play");
         }
 
         function setPlayerFullscreenMode(active) {
@@ -3381,7 +3382,7 @@
         }
 
         function getZoomTarget() {
-            return playerShellEl.querySelector(".plyr") || dialogPlayerEl;
+            return playerShellEl.querySelector(".plyr__video-wrapper") || dialogPlayerEl;
         }
 
         function applyZoomTransform() {
@@ -3618,6 +3619,8 @@
                 if (!side) {
                     gestureState.lastTapAt = 0;
                     gestureState.lastSide = "";
+                    event.preventDefault();
+                    togglePlayerControls();
                     return;
                 }
 
@@ -3636,6 +3639,8 @@
 
                 gestureState.lastTapAt = now;
                 gestureState.lastSide = side;
+                event.preventDefault();
+                togglePlayerControls();
             },
             { passive: false }
         );
@@ -3689,9 +3694,11 @@
             }
         }, true);
         window.addEventListener("pointercancel", endPan, true);
-        dialogPlayerEl.addEventListener(
+        playerShellEl.addEventListener(
             "click",
             (event) => {
+                if (state.isMobile) return;
+                if (shouldIgnoreHoldTarget(event.target)) return;
                 event.preventDefault();
                 event.stopPropagation();
                 togglePlayerControls();
