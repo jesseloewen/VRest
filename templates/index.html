@@ -2873,6 +2873,7 @@
         const dialogDownloadBtn = document.getElementById("dialogDownload");
         let plyrPlayer = null;
         let seekToastTimer = null;
+        let controlsAutoHideTimer = null;
         const gestureState = { lastTapAt: 0, lastSide: "" };
         const holdSpeedState = {
             active: false,
@@ -2956,6 +2957,7 @@
         const PREVIEW_HOLD_DELAY_MS = 350;
         const HOLD_MOVE_CANCEL_PX = 14;
         const PLAYBACK_SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3];
+        const CONTROLS_AUTO_HIDE_DELAY_MS = 3000;
         const SORT_KEY_STORAGE_KEY = "vrest.sort.key";
         const SORT_DIR_STORAGE_KEY = "vrest.sort.direction";
         const SORT_KEYS = new Set(["default", "az", "dateAdded", "length", "size", "random"]);
@@ -3369,12 +3371,46 @@
 
         function togglePlayerControls() {
             const hidden = playerShellEl.classList.contains("nav-controls-hidden");
-            setDialogNavControlsVisible(hidden);
+            if (hidden) {
+                setDialogNavControlsVisible(true);
+                resetControlsAutoHideTimer();
+            } else {
+                setDialogNavControlsVisible(false);
+                clearControlsAutoHideTimer();
+            }
         }
 
         function setPlayerPlaybackState(isPlaying) {
             playerShellEl.classList.toggle("is-playing", Boolean(isPlaying));
             centerPlayBtnEl.setAttribute("aria-label", isPlaying ? "Pause" : "Play");
+            if (isPlaying) {
+                resetControlsAutoHideTimer();
+            } else {
+                clearControlsAutoHideTimer();
+                showControls();
+            }
+        }
+
+        function showControls() {
+            setDialogNavControlsVisible(true);
+        }
+
+        function clearControlsAutoHideTimer() {
+            if (controlsAutoHideTimer) {
+                window.clearTimeout(controlsAutoHideTimer);
+                controlsAutoHideTimer = null;
+            }
+        }
+
+        function resetControlsAutoHideTimer() {
+            clearControlsAutoHideTimer();
+            const isPlaying = playerShellEl.classList.contains("is-playing");
+            if (!isPlaying) return;
+            controlsAutoHideTimer = window.setTimeout(() => {
+                const stillPlaying = playerShellEl.classList.contains("is-playing");
+                if (!stillPlaying) return;
+                setDialogNavControlsVisible(false);
+            }, CONTROLS_AUTO_HIDE_DELAY_MS);
         }
 
         function setPlayerFullscreenMode(active) {
@@ -3714,6 +3750,16 @@
                 pausePlayer();
             }
         });
+        playerShellEl.addEventListener(
+            "pointermove",
+            () => {
+                if (state.isMobile) return;
+                var hidden = playerShellEl.classList.contains("nav-controls-hidden");
+                if (hidden) showControls();
+                resetControlsAutoHideTimer();
+            },
+            { passive: true }
+        );
         playerShellEl.addEventListener(
             "wheel",
             (event) => {
