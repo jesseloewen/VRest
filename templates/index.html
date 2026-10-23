@@ -309,9 +309,23 @@
             font-size: 12px;
         }
 
-        .tree-toggle:hover {
-            background: rgba(90, 216, 184, 0.24);
-        }
+.tree-toggle:hover {
+    background: rgba(90, 216, 184, 0.24);
+}
+
+.tree-checkbox {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 15px;
+    margin: 0;
+    accent-color: #5ad8b8;
+    cursor: pointer;
+}
+
+.tree-row.checked {
+    background: rgba(90, 216, 184, 0.1);
+    border-radius: 6px;
+}
 
         .tree-button {
             width: 100%;
@@ -2949,6 +2963,10 @@
             dialogPlaylist: [],
             dialogPlaylistIndex: -1,
             dialogCurrentPath: "",
+            videoById: {},
+            folderById: {},
+            folderIdByPath: {},
+            folderFilterChecked: [],
             autoNextEnabled: false,
         };
 
@@ -2971,6 +2989,7 @@
         const URL_PARAM_DIR = "dir";
         const URL_PARAM_SIZE = "size";
         const URL_PARAM_VIDEO = "v";
+        const URL_PARAM_FOLDER_CHECKED = "folders";
         const ITEM_SIZE_PRESETS = {
             xs: 180,
             sm: 220,
@@ -4049,6 +4068,28 @@
             return bucket;
         }
 
+        function buildFolderByIdMap(node, map, reverseMap) {
+            if (!node || !node.id) {
+                return;
+            }
+            map[node.id] = String(node.path || "");
+            reverseMap[String(node.path || "")] = node.id;
+            const childFolders = Array.isArray(node.folders) ? node.folders : [];
+            for (const child of childFolders) {
+                buildFolderByIdMap(child, map, reverseMap);
+            }
+        }
+
+        function getDescendantPaths(parentPath) {
+            if (!parentPath) {
+                return Object.keys(state.folderIdByPath).filter(function (p) { return p !== ""; });
+            }
+            var prefix = parentPath + "/";
+            return Object.keys(state.folderIdByPath).filter(function (p) {
+                return p.startsWith(prefix);
+            });
+        }
+
         function countVideosInNode(node) {
             if (!node) {
                 return 0;
@@ -4065,6 +4106,7 @@
             const params = new URLSearchParams(window.location.search);
             return {
                 folder: params.get(URL_PARAM_FOLDER) || "",
+                folderChecked: params.get(URL_PARAM_FOLDER_CHECKED) || "",
                 search: params.get(URL_PARAM_SEARCH) || "",
                 sort: params.get(URL_PARAM_SORT) || "",
                 dir: params.get(URL_PARAM_DIR) || "",
@@ -4076,8 +4118,12 @@
         function syncURL({ push, videoPath } = {}) {
             const params = new URLSearchParams();
 
-            if (state.folderFilter) {
-                params.set(URL_PARAM_FOLDER, state.folderFilter);
+            if (state.folderFilterChecked.length > 0) {
+                const ids = state.folderFilterChecked.map(function (p) { return state.folderIdByPath[p] || p; });
+                params.set(URL_PARAM_FOLDER_CHECKED, ids.join(","));
+            } else if (state.folderFilter) {
+                const folderId = state.folderIdByPath[state.folderFilter];
+                params.set(URL_PARAM_FOLDER, folderId || state.folderFilter);
             }
             if (state.searchQuery) {
                 params.set(URL_PARAM_SEARCH, state.searchQuery);
@@ -4097,7 +4143,8 @@
 
             const videoParam = videoPath !== undefined ? videoPath : (state.dialogCurrentPath || "");
             if (videoParam) {
-                params.set(URL_PARAM_VIDEO, videoParam);
+                const video = state.videos.find(v => v.path === videoParam);
+                params.set(URL_PARAM_VIDEO, video ? video.id : videoParam);
             }
 
             const qs = params.toString();
@@ -4114,10 +4161,22 @@
             const urlState = readStateFromURL();
             const isPopstate = Boolean(options.isPopstate);
 
-            if (urlState.folder !== state.folderFilter) {
-                state.folderFilter = urlState.folder;
-                renderFolders();
-            }
+            const folderChanged = function () {
+                if (urlState.folderChecked) {
+                    const ids = urlState.folderChecked.split(",").filter(Boolean);
+                    const paths = ids.map(function (id) { return state.folderById[id]; }).filter(Boolean);
+                    if (paths.join(",") !== state.folderFilterChecked.join(",")) {
+                        state.folderFilter = "";
+                        state.folderFilterChecked = paths;
+                        renderFolders();
+                    }
+                } else if (urlState.folder !== state.folderFilter || state.folderFilterChecked.length > 0) {
+                    state.folderFilter = state.folderById[urlState.folder] || urlState.folder;
+                    state.folderFilterChecked = [];
+                    renderFolders();
+                }
+            };
+            folderChanged();
 
             if (urlState.search !== state.searchQuery) {
                 state.searchQuery = urlState.search;
@@ -4164,7 +4223,8 @@
                 renderGrid();
             }
 
-            const videoPathFromURL = urlState.video;
+            const videoIdFromURL = urlState.video;
+            const videoPathFromURL = videoIdFromURL ? (state.videoById[videoIdFromURL] || {}).path || "" : "";
             const dialogHasVideo = Boolean(state.dialogCurrentPath);
 
             if (videoPathFromURL && !dialogHasVideo) {
@@ -4788,6 +4848,14 @@
         }
 
         function inCurrentFilter(video) {
+            if (state.folderFilterChecked.length > 0) {
+                return state.folderFilterChecked.some(function (folderPath) {
+                    return (
+                        video.folder === folderPath ||
+                        video.folder.startsWith(folderPath + "/")
+                    );
+                });
+            }
             if (!state.folderFilter) {
                 return true;
             }
@@ -5082,11 +5150,26 @@
             rootCrumb.textContent = "All Videos";
             rootCrumb.addEventListener("click", () => {
                 state.folderFilter = "";
+                state.folderFilterChecked = [];
                 renderFolders();
                 renderGrid();
                 syncURL();
             });
             breadcrumbsEl.appendChild(rootCrumb);
+
+            if (state.folderFilterChecked.length > 0) {
+                const crumb = document.createElement("button");
+                crumb.className = "crumb active";
+                crumb.textContent = state.folderFilterChecked.length + " folder" + (state.folderFilterChecked.length > 1 ? "s" : "") + " selected";
+                crumb.addEventListener("click", () => {
+                    state.folderFilterChecked = [];
+                    renderFolders();
+                    renderGrid();
+                    syncURL();
+                });
+                breadcrumbsEl.appendChild(crumb);
+                return;
+            }
 
             if (!state.folderFilter) {
                 return;
@@ -5102,6 +5185,7 @@
                 const target = cumulative;
                 crumb.addEventListener("click", () => {
                     state.folderFilter = target;
+                    state.folderFilterChecked = [];
                     renderFolders();
                     renderGrid();
                     syncURL();
@@ -5116,6 +5200,11 @@
 
             const row = document.createElement("div");
             row.className = "tree-row";
+
+            const isChecked = state.folderFilterChecked.includes(node.path);
+            if (isChecked) {
+                row.classList.add("checked");
+            }
 
             const hasChildren = node.folders && node.folders.length > 0;
             const isExpanded = state.expandedFolders.has(node.path);
@@ -5142,6 +5231,33 @@
                 row.appendChild(spacer);
             }
 
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.className = "tree-checkbox";
+            checkbox.checked = isChecked;
+            checkbox.setAttribute("aria-label", "Toggle folder filter " + node.name);
+            checkbox.addEventListener("change", function () {
+                if (checkbox.checked) {
+                    state.folderFilter = "";
+                    var toAdd = [node.path].concat(getDescendantPaths(node.path));
+                    toAdd.forEach(function (p) {
+                        if (!state.folderFilterChecked.includes(p)) {
+                            state.folderFilterChecked = state.folderFilterChecked.concat(p);
+                        }
+                    });
+                } else {
+                    var toRemove = [node.path].concat(getDescendantPaths(node.path));
+                    state.folderFilterChecked = state.folderFilterChecked.filter(function (p) {
+                        return toRemove.indexOf(p) === -1;
+                    });
+                }
+                renderFolders();
+                renderGrid();
+                closeSidebarIfMobile();
+                syncURL();
+            });
+            row.appendChild(checkbox);
+
             const button = document.createElement("button");
             button.type = "button";
             button.className = "tree-button" + (state.folderFilter === node.path ? " active" : "");
@@ -5149,6 +5265,7 @@
             button.innerHTML = `<span class="tree-name">${node.path ? "\u{1F4C1} " + node.name : "\u{1F3E0} Root"}</span><span class="tree-count">${videoCount}</span>`;
             button.addEventListener("click", () => {
                 state.folderFilter = node.path;
+                state.folderFilterChecked = [];
                 if (node.path) {
                     const segments = node.path.split("/");
                     let chain = "";
@@ -5891,6 +6008,25 @@
                         state.folderExpansionInitialized = true;
                     }
                 }
+                state.videoById = {};
+                for (const v of state.videos) {
+                    state.videoById[v.id] = v;
+                }
+                state.folderById = {};
+                state.folderIdByPath = {};
+                if (state.root) {
+                    buildFolderByIdMap(state.root, state.folderById, state.folderIdByPath);
+                }
+                const resolvedFolder = state.folderById[state.folderFilter];
+                if (resolvedFolder) {
+                    state.folderFilter = resolvedFolder;
+                }
+                if (state.folderFilterChecked.length > 0) {
+                    const resolved = state.folderFilterChecked.map(function (idOrPath) {
+                        return state.folderById[idOrPath] || idOrPath;
+                    }).filter(Boolean);
+                    state.folderFilterChecked = resolved;
+                }
 
                 const isIndexing = Boolean(payload.indexing);
 
@@ -6048,15 +6184,16 @@
         if (initURLState.folder) {
             state.folderFilter = initURLState.folder;
         }
+        if (initURLState.folderChecked) {
+            state.folderFilterChecked = initURLState.folderChecked.split(",").filter(Boolean);
+        }
 
         updateSearchClearButton();
         updateSortDirectionButton();
         initProPlayer();
         loadLibrary().then(() => {
             if (initURLState.video) {
-                const videoMeta = state.videos.find(
-                    (v) => String(v?.path || "") === initURLState.video
-                );
+                const videoMeta = state.videoById[initURLState.video];
                 if (videoMeta) {
                     openVideoDialog(videoMeta);
                 }

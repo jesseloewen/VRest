@@ -1,4 +1,5 @@
 import atexit
+import hashlib
 import hmac
 import json
 import logging
@@ -1718,6 +1719,7 @@ def ensure_folder_node(
         "path": normalized,
         "folders": [],
         "files": [],
+        "id": hashlib.sha256(normalized.encode()).hexdigest()[:12],
     }
     parent_node["folders"].append(node)
     folder_nodes[normalized] = node
@@ -1780,6 +1782,19 @@ def load_catalog_snapshot() -> bool:
         catalog_files = files
         subtitle_index = subs_index
 
+    for f in files:
+        if not f.get("id"):
+            f["id"] = hashlib.sha256(f["path"].encode()).hexdigest()[:12]
+
+    def _ensure_folder_ids(node: Dict) -> None:
+        if not node.get("id"):
+            key = node.get("path") or node.get("name") or ""
+            node["id"] = hashlib.sha256(key.encode()).hexdigest()[:12]
+        for child in node.get("folders") or []:
+            _ensure_folder_ids(child)
+
+    _ensure_folder_ids(root)
+
     saved_at_ts = payload.get("savedAtTs")
     try:
         cached_scan_ts = float(saved_at_ts)
@@ -1815,6 +1830,7 @@ def scan_video_library() -> Tuple[Dict, List[Dict], Dict[str, Dict[str, Dict[str
             "path": rel,
             "folder": folder,
             "ext": path.suffix.lower(),
+            "id": hashlib.sha256(rel.encode()).hexdigest()[:12],
         }
         try:
             stats = path.stat()
@@ -1842,6 +1858,7 @@ def scan_video_library() -> Tuple[Dict, List[Dict], Dict[str, Dict[str, Dict[str
         "path": "",
         "folders": [],
         "files": [],
+        "id": hashlib.sha256((VIDEO_ROOT.name or "Videos").encode()).hexdigest()[:12],
     }
     folder_nodes: Dict[str, Dict] = {"": root}
 
